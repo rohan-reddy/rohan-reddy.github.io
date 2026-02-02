@@ -1,0 +1,10 @@
+/* css styles */
+body {
+  font-family: "Merriweather", Georgia, serif; /* The academic serif look */
+  background-color: #fcfcfc; /* That slight off-white paper color */
+}
+
+pre, code {
+  font-family: "Inconsolata", "Fira Code", monospace;
+  background-color: #f1f3f5;
+}
