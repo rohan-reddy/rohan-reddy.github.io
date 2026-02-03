@@ -7,4 +7,41 @@ image: image.png # You can add a preview image later
 draft: false 
 ---
 
-*Work in progress...*
+## Introduction
+
+General Matrix Multiply, or GEMM, is a linear algebra operation that comprises the majority of computing done by modern deep learning models. In this note, I will explain how we can iteratively optimize GEMM implementations in CUDA until we have almost saturated the capability of modern NVIDIA GPUs. 
+
+### Mathematical Definition
+
+Formally, GEMM is defined as an operation on two input matrices $A$ and $B$, and an accumulation matrix $C$, scaled by scalars $\alpha$ and $\beta$:
+
+$$
+C = \alpha \cdot (A \times B) + \beta \cdot C
+$$
+
+Where:
+
+* $A$ is an $M \times K$ matrix.
+* $B$ is a $K \times N$ matrix.
+* $C$ is an $M \times N$ matrix.
+
+![](images/01_matrix_dims.svg){width=80%}
+
+In deep learning contexts, $\beta$ is often 0 (overwriting the output) or 1 (accumulating gradients), and $\alpha$ is typically 1.
+
+### Why GEMM?
+
+::: {.column-margin}
+**A Note on History**
+The standardization of GEMM dates back to the **BLAS (Basic Linear Algebra Subprograms)** specification in the late 1970s and 80s. 
+
+Specifically, **Level 3 BLAS** (introduced in 1990) targeted matrix-matrix operations. This distinction was crucial: unlike vector-vector (Level 1) or matrix-vector (Level 2) operations, matrix-matrix operations have a higher ratio of arithmetic operations to memory accesses, allowing for much higher utilization of floating-point units.
+:::
+
+In modern Transformer architectures, GEMM operations account for the vast majority of total Floating Point Operations (FLOPs). This is due to the structure of the Attention operation: $\text{softmax}(\frac{Q \times K^T}{\sqrt{d}}) \times V$. Aside from the softmax operation, everything else can be represented as GEMM:
+
+1.  Calculating the scaled attention scores ($\frac{Q \times K^T}{\sqrt{d}}$).
+2.  Calculating the weighted sum of values ($\text{scores} \times V$).
+
+Since GEMM dominates the runtime, even a small percentage improvement in kernel efficiency can realize massive savings in training and inference costs at scale.
+

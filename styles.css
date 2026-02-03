@@ -8,3 +8,9 @@ pre, code {
   font-family: "Inconsolata", "Fira Code", monospace;
   background-color: #f1f3f5;
 }
+
+/* Increase navbar logo size */
+.navbar-brand img {
+  max-height: 100px; /* Adjust this value as needed */
+  width: auto;      /* Maintains aspect ratio */
+}

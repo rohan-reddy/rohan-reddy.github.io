@@ -4,11 +4,16 @@ project:
 website:
   description: "A blog built with Quarto"
 
-  site-url: https://your-website-url.example.com # you must change this appropriately for RSS feeds to work properly
+  favicon: images/logo.svg
+
+  site-url: https://rohan-reddy.github.io # you must change this appropriately for RSS feeds to work properly
   
+  # New line with typeset logo:
   title: "Rohan Reddy / Notes"
 
   navbar:
+    logo: images/logo.svg
+
     right:
       - about.qmd
       - icon: github
@@ -17,6 +22,7 @@ website:
   page-footer: 
     left: "© 2026 Rohan Reddy"
     right: "Built with Quarto"
+  
 
 format:
   html:
