@@ -32,48 +32,5 @@
   <pubDate>Mon, 02 Feb 2026 05:00:00 GMT</pubDate>
   <media:content url="https://rohan-reddy.github.io/posts/001-gemm-optimization/image.png" medium="image" type="image/png"/>
 </item>
-<item>
-  <title>Post With Code</title>
-  <dc:creator>Harlow Malloc</dc:creator>
-  <link>https://rohan-reddy.github.io/posts/post-with-code/</link>
-  <description><![CDATA[ 
-
-
-
-
-
-<p>This is a post with executable code.</p>
-
-
-
- ]]></description>
-  <category>news</category>
-  <category>code</category>
-  <category>analysis</category>
-  <guid>https://rohan-reddy.github.io/posts/post-with-code/</guid>
-  <pubDate>Mon, 02 Feb 2026 05:00:00 GMT</pubDate>
-  <media:content url="https://rohan-reddy.github.io/posts/post-with-code/image.jpg" medium="image" type="image/jpeg"/>
-</item>
-<item>
-  <title>Welcome To My Blog</title>
-  <dc:creator>Tristan O&#39;Malley</dc:creator>
-  <link>https://rohan-reddy.github.io/posts/welcome/</link>
-  <description><![CDATA[ 
-
-
-
-
-
-<p>This is the first post in a Quarto blog. Welcome!</p>
-<p><img src="https://rohan-reddy.github.io/posts/welcome/thumbnail.jpg" class="img-fluid"></p>
-<p>Since this post doesn’t specify an explicit <code>image</code>, the first image in the post will be used in the listing page of posts.</p>
-
-
-
- ]]></description>
-  <category>news</category>
-  <guid>https://rohan-reddy.github.io/posts/welcome/</guid>
-  <pubDate>Fri, 30 Jan 2026 05:00:00 GMT</pubDate>
-</item>
 </channel>
 </rss>
