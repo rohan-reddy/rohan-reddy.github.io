@@ -20,11 +20,11 @@
 
 
 
-<section id="introduction" class="level2 page-columns page-full">
+<section id="introduction" class="level2">
 <h2 class="anchored" data-anchor-id="introduction">Introduction</h2>
 <p>General Matrix Multiply, or GEMM, is a linear algebra operation that comprises the majority of computing done by modern deep learning models. In this note, I will explain how we can iteratively optimize GEMM implementations in CUDA until we have almost saturated the capability of modern NVIDIA GPUs.</p>
 <section id="mathematical-definition" class="level3">
-<h3 class="anchored" data-anchor-id="mathematical-definition">Mathematical Definition</h3>
+<h3 class="anchored" data-anchor-id="mathematical-definition">Mathematical definition</h3>
 <p>Formally, GEMM is defined as an operation on two input matrices <img src="https://latex.codecogs.com/png.latex?A"> and <img src="https://latex.codecogs.com/png.latex?B">, and an accumulation matrix <img src="https://latex.codecogs.com/png.latex?C">, scaled by scalars <img src="https://latex.codecogs.com/png.latex?%5Calpha"> and <img src="https://latex.codecogs.com/png.latex?%5Cbeta">:</p>
 <p><img src="https://latex.codecogs.com/png.latex?%0AC%20=%20%5Calpha%20%5Ccdot%20(A%20%5Ctimes%20B)%20+%20%5Cbeta%20%5Ccdot%20C%0A"></p>
 <p>Where:</p>
@@ -36,18 +36,443 @@
 <p><img src="https://rohan-reddy.github.io/posts/001-gemm-optimization/images/01_matrix_dims.svg" class="img-fluid" style="width:80.0%"></p>
 <p>In deep learning contexts, <img src="https://latex.codecogs.com/png.latex?%5Cbeta"> is often 0 (overwriting the output) or 1 (accumulating gradients), and <img src="https://latex.codecogs.com/png.latex?%5Calpha"> is typically 1.</p>
 </section>
-<section id="why-gemm" class="level3 page-columns page-full">
+<section id="why-gemm" class="level3">
 <h3 class="anchored" data-anchor-id="why-gemm">Why GEMM?</h3>
-
-<div class="no-row-height column-margin column-container"><div class="">
-<p><strong>A Note on History</strong> The standardization of GEMM dates back to the <strong>BLAS (Basic Linear Algebra Subprograms)</strong> specification in the late 1970s and 80s.</p>
-<p>Specifically, <strong>Level 3 BLAS</strong> (introduced in 1990) targeted matrix-matrix operations. This distinction was crucial: unlike vector-vector (Level 1) or matrix-vector (Level 2) operations, matrix-matrix operations have a higher ratio of arithmetic operations to memory accesses, allowing for much higher utilization of floating-point units.</p>
-</div></div><p>In modern Transformer architectures, GEMM operations account for the vast majority of total Floating Point Operations (FLOPs). This is due to the structure of the Attention operation: <img src="https://latex.codecogs.com/png.latex?%5Ctext%7Bsoftmax%7D(%5Cfrac%7BQ%20%5Ctimes%20K%5ET%7D%7B%5Csqrt%7Bd%7D%7D)%20%5Ctimes%20V">. Aside from the softmax operation, everything else can be represented as GEMM:</p>
+<p>In modern Transformer architectures, GEMM operations account for the vast majority of total Floating Point Operations (FLOPs). This is due to the structure of the Attention operation: <img src="https://latex.codecogs.com/png.latex?%5Ctext%7Bsoftmax%7D(%5Cfrac%7BQ%20%5Ctimes%20K%5ET%7D%7B%5Csqrt%7Bd%7D%7D)%20%5Ctimes%20V">. Aside from the softmax operation, everything else can be represented as GEMM:</p>
 <ol type="1">
 <li>Calculating the scaled attention scores (<img src="https://latex.codecogs.com/png.latex?%5Cfrac%7BQ%20%5Ctimes%20K%5ET%7D%7B%5Csqrt%7Bd%7D%7D">).</li>
 <li>Calculating the weighted sum of values (<img src="https://latex.codecogs.com/png.latex?%5Ctext%7Bscores%7D%20%5Ctimes%20V">).</li>
 </ol>
 <p>Since GEMM dominates the runtime, even a small percentage improvement in kernel efficiency can realize massive savings in training and inference costs at scale.</p>
+</section>
+<section id="problem-setup" class="level3">
+<h3 class="anchored" data-anchor-id="problem-setup">Problem setup</h3>
+<p>As I iterate on GEMM kernels, I will test them on the General Matrix Multiplication test suite and infrastructure on LeetGPU.com. As per the problem setup there, I will only be using native capabilities of the GPUs, so no libraries like CuTe or cuBLAS. The test suite is hidden, but the known constraints are that each of the matrix dimensions <img src="https://latex.codecogs.com/png.latex?M">, <img src="https://latex.codecogs.com/png.latex?N">, and <img src="https://latex.codecogs.com/png.latex?K"> are between 16 and 4096. So the input matrices range from very small (a few hundred elements) to fairly large (16 million elements). The input matrices A and B are given as type half (half-precision floating point number). Lower than usual precision floats are common in AI workloads as they take up less space and allow for higher throughput. For improved accuracy, the computation of the GEMM output will be done using full-precision floats, but the final storage will also be as a half-precision float.</p>
+<p>For each kernel, I will explain the algorithm, how it interacts with the GPU architecture and memory hierarchy, and show the full code in CUDA C++. Finally, I will discuss the arithmetic intensity of the kernel and benchmark its performance on the following NVIDIA GPUs: Tesla T4 (2017), Ampere A100-80GB (2020), Hopper H100 (2022), Hopper H200 (2023), and Blackwell B200 (2024).</p>
+</section>
+<section id="assumed-background" class="level3">
+<h3 class="anchored" data-anchor-id="assumed-background">Assumed background</h3>
+<p>I will assume the reader has at least the following understanding of the CUDA programming model: as a programmer, when we ask the GPU to execute a CUDA kernel, we first decide on the dimensions of a grid of threads that will be launched. Threads are grouped into blocks, and multiple blocks are assigned to each Streaming Multiprocessor (SMs). A block is resident on an SM until all of its threads have completed, at which point it is evicted. Multiple blocks can be resident at a time on an SM, and the SM will execute whichever threads are ready for compute and not waiting for memory, in order to hide memory latency. GPUs have several types of memory: registers, shared memory, L1 and L2 caches, constant memory, and global memory. Using these types of memory effectively is crucial for maximizing performance. Performance can vary widely based on the specific architecture of the GPU, and we can understand how to improve a kernel by calculating its arithmetic intensity and checking whether the kernel is compute or memory bound.</p>
+<p>If the reader is not familiar with these concepts, I refer them to Programming Massively Parallel Processors (Kirk &amp; Hwu), an excellent resource that explains these concepts much better than I could in this post. Chapters 1 through 6 cover everything listed above.</p>
+</section>
+</section>
+<section id="naive-matrix-multiplication" class="level2">
+<h2 class="anchored" data-anchor-id="naive-matrix-multiplication">1. Naive Matrix Multiplication</h2>
+<p>In a naive parallel computing model, we can have every thread be solely responsible for computing exactly one output element in the final matrix. Each thread would load the row from A and column from B that it needs for the dot product for that output element.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="annotated-cell-1" style="background: #f1f3f5;"><pre class="sourceCode cpp code-annotation-code code-with-copy code-annotated"><code class="sourceCode cpp"><span id="annotated-cell-1-1"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">//| label: naive-gemm-kernel</span></span>
+<span id="annotated-cell-1-2"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">//| code-fold: true</span></span>
+<span id="annotated-cell-1-3"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">//| code-summary: "Show Naive GEMM Implementation"</span></span>
+<span id="annotated-cell-1-4"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">//| code-line-numbers: true</span></span>
+<span id="annotated-cell-1-5"></span>
+<span id="annotated-cell-1-6"><span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">#include </span><span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">&lt;cuda_fp16.h&gt;</span></span>
+<span id="annotated-cell-1-7"><span class="pp" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">#include </span><span class="im" style="color: #00769E;
+background-color: null;
+font-style: inherit;">&lt;cuda_runtime.h&gt;</span></span>
+<span id="annotated-cell-1-8"></span>
+<span id="annotated-cell-1-9"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// The __global__ keyword indicates this function runs on the GPU </span></span>
+<span id="annotated-cell-1-10"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// and is called from the host (CPU).</span></span>
+<span id="annotated-cell-1-11">__global__ <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span> gemm_naive_kernel<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">const</span> half<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> A<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">const</span> half<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> B<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> half<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> C<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> </span>
+<span id="annotated-cell-1-12">                                  <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> M<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> N<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> K<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> </span>
+<a class="code-annotation-anchor" data-target-cell="annotated-cell-1" data-target-annotation="1" onclick="event.preventDefault();">1</a><span id="annotated-cell-1-13" class="code-annotation-target">                                  <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">float</span> alpha<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">float</span> beta<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="annotated-cell-1-14">    </span>
+<span id="annotated-cell-1-15">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// Calculate global row and column indices for this thread</span></span>
+<a class="code-annotation-anchor" data-target-cell="annotated-cell-1" data-target-annotation="2" onclick="event.preventDefault();">2</a><span id="annotated-cell-1-16" class="code-annotation-target">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> col <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> blockIdx<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">.</span>x <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> blockDim<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">.</span>x <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> threadIdx<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">.</span>x<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="annotated-cell-1-17">    <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> row <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> blockIdx<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">.</span>y <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> blockDim<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">.</span>y <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> threadIdx<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">.</span>y<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="annotated-cell-1-18">    </span>
+<span id="annotated-cell-1-19">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// Boundary check: ensure we don't access memory outside the matrix</span></span>
+<span id="annotated-cell-1-20">    <span class="cf" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">if</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>row <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span> M <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&amp;&amp;</span> col <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span> N<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="annotated-cell-1-21">        <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">float</span> val <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span></span>
+<span id="annotated-cell-1-22">        </span>
+<span id="annotated-cell-1-23">        <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// The K-loop: Perform the dot product</span></span>
+<span id="annotated-cell-1-24">        <span class="cf" style="color: #003B4F;
+background-color: null;
+font-weight: bold;
+font-style: inherit;">for</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> i <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">0</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span> i <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;</span> K<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">;</span> i<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">++)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="annotated-cell-1-25">            <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// SLOW: Reading directly from Global Memory (HBM) every iteration</span></span>
+<a class="code-annotation-anchor" data-target-cell="annotated-cell-1" data-target-annotation="3" onclick="event.preventDefault();">3</a><span id="annotated-cell-1-26" class="code-annotation-target">            val <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+=</span> __half2float<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>A<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span>row <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> K <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> i<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">])</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> __half2float<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>B<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span>i <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> N <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> col<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">]);</span></span>
+<span id="annotated-cell-1-27">        <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="annotated-cell-1-28">        </span>
+<span id="annotated-cell-1-29">        <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// Write result back to C</span></span>
+<span id="annotated-cell-1-30">        val <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> alpha <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> val <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> beta <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> __half2float<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>C<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span>row <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> N <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> col<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">]);</span></span>
+<span id="annotated-cell-1-31">        C<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">[</span>row <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> N <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> col<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">]</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">=</span> __float2half<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>val<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="annotated-cell-1-32">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="annotated-cell-1-33"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span>
+<span id="annotated-cell-1-34"></span>
+<span id="annotated-cell-1-35"><span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// Wrapper function to be called from Python/C++ Host</span></span>
+<span id="annotated-cell-1-36"><span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">extern</span> <span class="st" style="color: #20794D;
+background-color: null;
+font-style: inherit;">"C"</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">void</span> solve<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">const</span> half<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> A<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="at" style="color: #657422;
+background-color: null;
+font-style: inherit;">const</span> half<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> B<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> half<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">*</span> C<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> M<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> N<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">int</span> K<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">float</span> alpha<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span></span>
+<a class="code-annotation-anchor" data-target-cell="annotated-cell-1" data-target-annotation="4" onclick="event.preventDefault();">4</a><span id="annotated-cell-1-37" class="code-annotation-target">                      <span class="dt" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">float</span> beta<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">{</span></span>
+<span id="annotated-cell-1-38"></span>
+<span id="annotated-cell-1-39">    dim3 block<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span><span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">16</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">16</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="annotated-cell-1-40">    <span class="co" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">// Grid calculation: ensures we cover the entire matrix (ceiling division)</span></span>
+<span id="annotated-cell-1-41">    dim3 grid<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span></span>
+<span id="annotated-cell-1-42">        <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>N <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">15</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">/</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">16</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span></span>
+<span id="annotated-cell-1-43">        <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">(</span>M <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">+</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">15</span><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">/</span> <span class="dv" style="color: #AD0000;
+background-color: null;
+font-style: inherit;">16</span></span>
+<span id="annotated-cell-1-44">    <span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="annotated-cell-1-45"></span>
+<span id="annotated-cell-1-46">    gemm_naive_kernel<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&lt;&lt;&lt;</span>grid<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> block<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">&gt;&gt;&gt;(</span>A<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> B<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> C<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> M<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> N<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> K<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> alpha<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">,</span> beta<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">);</span></span>
+<span id="annotated-cell-1-47">    cudaDeviceSynchronize<span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">();</span></span>
+<span id="annotated-cell-1-48"><span class="op" style="color: #5E5E5E;
+background-color: null;
+font-style: inherit;">}</span></span><div class="code-annotation-gutter-bg"></div><div class="code-annotation-gutter"></div></code></pre></div></div>
+<dl class="code-annotation-container-grid">
+<dt data-target-cell="annotated-cell-1" data-target-annotation="1">1</dt>
+<dd>
+<span data-code-cell="annotated-cell-1" data-code-lines="13" data-code-annotation="1"><strong>The Kernel Signature</strong>: We use <code>half</code> precision pointers for storage but perform accumulation in <code>float</code> (FP32) to prevent overflow during the dot product—a standard practice in Mixed Precision training.</span>
+</dd>
+<dt data-target-cell="annotated-cell-1" data-target-annotation="2">2</dt>
+<dd>
+<span data-code-cell="annotated-cell-1" data-code-lines="16" data-code-annotation="2"><strong>2D Indexing</strong>: Standard mapping of a 2D thread block to matrix coordinates. <code>blockIdx</code> tells us which tile we are in; <code>threadIdx</code> tells us the pixel within that tile.</span>
+</dd>
+<dt data-target-cell="annotated-cell-1" data-target-annotation="3">3</dt>
+<dd>
+<span data-code-cell="annotated-cell-1" data-code-lines="26" data-code-annotation="3"><strong>The Bottleneck</strong>: This line is the performance killer. For every single pixel in <img src="https://latex.codecogs.com/png.latex?C">, we are fetching the entire row of <img src="https://latex.codecogs.com/png.latex?A"> and column of <img src="https://latex.codecogs.com/png.latex?B"> from High Bandwidth Memory (HBM). This results in massive redundant memory traffic.</span>
+</dd>
+<dt data-target-cell="annotated-cell-1" data-target-annotation="4">4</dt>
+<dd>
+<span data-code-cell="annotated-cell-1" data-code-lines="37" data-code-annotation="4"><strong>Host Wrapper</strong>: <code>extern "C"</code> prevents C++ name mangling, allowing us to easily call this function from ctypes (Python) or PyTorch extensions later in the project.</span>
+</dd>
+</dl>
+</section>
+<section id="tiled-matrix-multiplication" class="level2">
+<h2 class="anchored" data-anchor-id="tiled-matrix-multiplication">2. Tiled Matrix Multiplication</h2>
+<p>To move beyond the naive implementation, we must address the primary bottleneck of GPU computing: <strong>Memory Bandwidth</strong>.</p>
+<p>In a naive implementation, every thread loads its required row of <img src="https://latex.codecogs.com/png.latex?A"> and column of <img src="https://latex.codecogs.com/png.latex?B"> directly from global memory (HBM). This results in massive redundancy. For a tile of size <img src="https://latex.codecogs.com/png.latex?T%20%5Ctimes%20T">, the naive approach loads data <img src="https://latex.codecogs.com/png.latex?2T%5E2%20%5Ctimes%20N"> times.</p>
+<p><strong>Tiling</strong> exploits the data reuse inherent in matrix multiplication. By loading a small block of data into <strong>Shared Memory</strong> (a user-managed cache that is roughly 100x faster than HBM), threads in a block can repeatedly access the same data without hitting global memory.</p>
+<section id="algorithm" class="level3">
+<h3 class="anchored" data-anchor-id="algorithm">Algorithm</h3>
+<p>The strategy is to divide the output matrix <img src="https://latex.codecogs.com/png.latex?C"> into tiles. A standard Thread Block (e.g., <img src="https://latex.codecogs.com/png.latex?16%20%5Ctimes%2016">) is responsible for computing one tile of <img src="https://latex.codecogs.com/png.latex?C">.</p>
+<ol type="1">
+<li><strong>Collaborative Load:</strong> All threads in the block work together to load a sub-tile of <img src="https://latex.codecogs.com/png.latex?A"> and a sub-tile of <img src="https://latex.codecogs.com/png.latex?B"> from global memory into shared memory.</li>
+<li><strong>Synchronization:</strong> A barrier (<code>__syncthreads()</code>) ensures all data is loaded.</li>
+<li><strong>Compute:</strong> Threads calculate the partial dot product using the data in shared memory.</li>
+<li><strong>Iterate:</strong> The block moves to the next “phase” (the next chunk of the K-dimension) and repeats.</li>
+</ol>
+</section>
+</section>
+<section id="visualizing-the-data-flow" class="level2">
+<h2 class="anchored" data-anchor-id="visualizing-the-data-flow">Visualizing the Data Flow</h2>
+<section id="memory-hierarchy" class="level3">
+<h3 class="anchored" data-anchor-id="memory-hierarchy">Memory Hierarchy</h3>
+<p>Before looking at the code, it is crucial to map the physical movement of data. We are explicitly moving data from the massive but slow High Bandwidth Memory (HBM) into the tiny but fast Shared Memory (SRAM).</p>
 
 
 </section>
