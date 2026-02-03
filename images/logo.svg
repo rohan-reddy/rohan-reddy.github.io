@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <style>
     .bg { fill: #ffffff; }             /* Background color */
-    .color1 { fill: #2A9D8F; }         /* Top Right Tile (Indigo) */
-    .color2 { fill: #78350F; }         /* Bottom Left Tile (Rose) */
+    .color1 { fill: #33c4af; }         /* Top Right Tile (Indigo) */
+    .color2 { fill: #e67467; }         /* Bottom Left Tile (Rose) */
     .text { 
       font-family: "Georgia", "Times New Roman", serif; /* Academic Serif Font */
       font-weight: bold; 
