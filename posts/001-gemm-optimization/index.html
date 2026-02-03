@@ -72,11 +72,40 @@ ul.task-list li input[type="checkbox"] {
   }
 }</script>
 
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
 
 <link rel="stylesheet" href="../../styles.css">
 </head>
 
-<body class="floating nav-fixed quarto-light">
+<body class="floating nav-fixed slimcontent quarto-light">
 
 <div id="quarto-search-results"></div>
   <header id="quarto-header" class="headroom fixed-top quarto-banner">
@@ -149,22 +178,63 @@ ul.task-list li input[type="checkbox"] {
   </header><div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
 <!-- sidebar -->
   <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
-    
+    <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#introduction" id="toc-introduction" class="nav-link active" data-scroll-target="#introduction">Introduction</a>
+  <ul class="collapse">
+  <li><a href="#mathematical-definition" id="toc-mathematical-definition" class="nav-link" data-scroll-target="#mathematical-definition">Mathematical Definition</a></li>
+  <li><a href="#why-gemm" id="toc-why-gemm" class="nav-link" data-scroll-target="#why-gemm">Why GEMM?</a></li>
+  </ul></li>
+  </ul>
+</nav>
 </nav>
 <div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
 <!-- margin-sidebar -->
     <div id="quarto-margin-sidebar" class="sidebar margin-sidebar zindex-bottom">
     </div>
 <!-- main -->
-<main class="content quarto-banner-title-block" id="quarto-document-content">
+<main class="content quarto-banner-title-block page-columns page-full" id="quarto-document-content">
 
 
 
 
 
-<p><em>Work in progress…</em></p>
+<section id="introduction" class="level2 page-columns page-full">
+<h2 class="anchored" data-anchor-id="introduction">Introduction</h2>
+<p>General Matrix Multiply, or GEMM, is a linear algebra operation that comprises the majority of computing done by modern deep learning models. In this note, I will explain how we can iteratively optimize GEMM implementations in CUDA until we have almost saturated the capability of modern NVIDIA GPUs.</p>
+<section id="mathematical-definition" class="level3">
+<h3 class="anchored" data-anchor-id="mathematical-definition">Mathematical Definition</h3>
+<p>Formally, GEMM is defined as an operation on two input matrices <span class="math inline">\(A\)</span> and <span class="math inline">\(B\)</span>, and an accumulation matrix <span class="math inline">\(C\)</span>, scaled by scalars <span class="math inline">\(\alpha\)</span> and <span class="math inline">\(\beta\)</span>:</p>
+<p><span class="math display">\[
+C = \alpha \cdot (A \times B) + \beta \cdot C
+\]</span></p>
+<p>Where:</p>
+<ul>
+<li><span class="math inline">\(A\)</span> is an <span class="math inline">\(M \times K\)</span> matrix.</li>
+<li><span class="math inline">\(B\)</span> is a <span class="math inline">\(K \times N\)</span> matrix.</li>
+<li><span class="math inline">\(C\)</span> is an <span class="math inline">\(M \times N\)</span> matrix.</li>
+</ul>
+<p><img src="images/01_matrix_dims.svg" class="img-fluid" style="width:80.0%"></p>
+<p>In deep learning contexts, <span class="math inline">\(\beta\)</span> is often 0 (overwriting the output) or 1 (accumulating gradients), and <span class="math inline">\(\alpha\)</span> is typically 1.</p>
+</section>
+<section id="why-gemm" class="level3 page-columns page-full">
+<h3 class="anchored" data-anchor-id="why-gemm">Why GEMM?</h3>
+
+<div class="no-row-height column-margin column-container"><div class="">
+<p><strong>A Note on History</strong> The standardization of GEMM dates back to the <strong>BLAS (Basic Linear Algebra Subprograms)</strong> specification in the late 1970s and 80s.</p>
+<p>Specifically, <strong>Level 3 BLAS</strong> (introduced in 1990) targeted matrix-matrix operations. This distinction was crucial: unlike vector-vector (Level 1) or matrix-vector (Level 2) operations, matrix-matrix operations have a higher ratio of arithmetic operations to memory accesses, allowing for much higher utilization of floating-point units.</p>
+</div></div><p>In modern Transformer architectures, GEMM operations account for the vast majority of total Floating Point Operations (FLOPs). This is due to the structure of the Attention operation: <span class="math inline">\(\text{softmax}(\frac{Q \times K^T}{\sqrt{d}}) \times V\)</span>. Aside from the softmax operation, everything else can be represented as GEMM:</p>
+<ol type="1">
+<li>Calculating the scaled attention scores (<span class="math inline">\(\frac{Q \times K^T}{\sqrt{d}}\)</span>).</li>
+<li>Calculating the weighted sum of values (<span class="math inline">\(\text{scores} \times V\)</span>).</li>
+</ol>
+<p>Since GEMM dominates the runtime, even a small percentage improvement in kernel efficiency can realize massive savings in training and inference costs at scale.</p>
 
 
+</section>
+</section>
 
 </main> <!-- /main -->
 <script id="quarto-html-after-body" type="application/javascript">

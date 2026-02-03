@@ -20,9 +20,38 @@
 
 
 
-<p><em>Work in progress…</em></p>
+<section id="introduction" class="level2 page-columns page-full">
+<h2 class="anchored" data-anchor-id="introduction">Introduction</h2>
+<p>General Matrix Multiply, or GEMM, is a linear algebra operation that comprises the majority of computing done by modern deep learning models. In this note, I will explain how we can iteratively optimize GEMM implementations in CUDA until we have almost saturated the capability of modern NVIDIA GPUs.</p>
+<section id="mathematical-definition" class="level3">
+<h3 class="anchored" data-anchor-id="mathematical-definition">Mathematical Definition</h3>
+<p>Formally, GEMM is defined as an operation on two input matrices <img src="https://latex.codecogs.com/png.latex?A"> and <img src="https://latex.codecogs.com/png.latex?B">, and an accumulation matrix <img src="https://latex.codecogs.com/png.latex?C">, scaled by scalars <img src="https://latex.codecogs.com/png.latex?%5Calpha"> and <img src="https://latex.codecogs.com/png.latex?%5Cbeta">:</p>
+<p><img src="https://latex.codecogs.com/png.latex?%0AC%20=%20%5Calpha%20%5Ccdot%20(A%20%5Ctimes%20B)%20+%20%5Cbeta%20%5Ccdot%20C%0A"></p>
+<p>Where:</p>
+<ul>
+<li><img src="https://latex.codecogs.com/png.latex?A"> is an <img src="https://latex.codecogs.com/png.latex?M%20%5Ctimes%20K"> matrix.</li>
+<li><img src="https://latex.codecogs.com/png.latex?B"> is a <img src="https://latex.codecogs.com/png.latex?K%20%5Ctimes%20N"> matrix.</li>
+<li><img src="https://latex.codecogs.com/png.latex?C"> is an <img src="https://latex.codecogs.com/png.latex?M%20%5Ctimes%20N"> matrix.</li>
+</ul>
+<p><img src="https://rohan-reddy.github.io/posts/001-gemm-optimization/images/01_matrix_dims.svg" class="img-fluid" style="width:80.0%"></p>
+<p>In deep learning contexts, <img src="https://latex.codecogs.com/png.latex?%5Cbeta"> is often 0 (overwriting the output) or 1 (accumulating gradients), and <img src="https://latex.codecogs.com/png.latex?%5Calpha"> is typically 1.</p>
+</section>
+<section id="why-gemm" class="level3 page-columns page-full">
+<h3 class="anchored" data-anchor-id="why-gemm">Why GEMM?</h3>
+
+<div class="no-row-height column-margin column-container"><div class="">
+<p><strong>A Note on History</strong> The standardization of GEMM dates back to the <strong>BLAS (Basic Linear Algebra Subprograms)</strong> specification in the late 1970s and 80s.</p>
+<p>Specifically, <strong>Level 3 BLAS</strong> (introduced in 1990) targeted matrix-matrix operations. This distinction was crucial: unlike vector-vector (Level 1) or matrix-vector (Level 2) operations, matrix-matrix operations have a higher ratio of arithmetic operations to memory accesses, allowing for much higher utilization of floating-point units.</p>
+</div></div><p>In modern Transformer architectures, GEMM operations account for the vast majority of total Floating Point Operations (FLOPs). This is due to the structure of the Attention operation: <img src="https://latex.codecogs.com/png.latex?%5Ctext%7Bsoftmax%7D(%5Cfrac%7BQ%20%5Ctimes%20K%5ET%7D%7B%5Csqrt%7Bd%7D%7D)%20%5Ctimes%20V">. Aside from the softmax operation, everything else can be represented as GEMM:</p>
+<ol type="1">
+<li>Calculating the scaled attention scores (<img src="https://latex.codecogs.com/png.latex?%5Cfrac%7BQ%20%5Ctimes%20K%5ET%7D%7B%5Csqrt%7Bd%7D%7D">).</li>
+<li>Calculating the weighted sum of values (<img src="https://latex.codecogs.com/png.latex?%5Ctext%7Bscores%7D%20%5Ctimes%20V">).</li>
+</ol>
+<p>Since GEMM dominates the runtime, even a small percentage improvement in kernel efficiency can realize massive savings in training and inference costs at scale.</p>
 
 
+</section>
+</section>
 
  ]]></description>
   <category>CUDA</category>
