@@ -44,7 +44,7 @@ Since GEMM dominates the runtime, even a small percentage improvement in kernel 
 ### Problem setup
 As I iterate on GEMM kernels, I will test them on the General Matrix Multiplication test suite and infrastructure on LeetGPU.com. As per the problem setup there, I will only be using native capabilities of the GPUs, so no libraries like CuTe or cuBLAS. The test suite is hidden, but the known constraints are that each of the matrix dimensions $M$, $N$, and $K$ are between 16 and 4096. So the input matrices range from very small (a few hundred elements) to fairly large (16 million elements). The input matrices A and B are given as type half (half-precision floating point number). Lower than usual precision floats are common in AI workloads as they take up less space and allow for higher throughput. For improved accuracy, the computation of the GEMM output will be done using full-precision floats, but the final storage will also be as a half-precision float.
 
-For each kernel, I will explain the algorithm, how it interacts with the GPU architecture and memory hierarchy, and show the full code in CUDA C++. Finally, I will discuss the arithmeticc intensity of the kernel and benchmark its performance on the following NVIDIA GPUs: Tesla T4 (2017), Ampere A100-80GB (2020), Hopper H100 (2022), Hopper H200 (2023), and Blackwell B200 (2024). 
+For each kernel, I will explain the algorithm, how it interacts with the GPU architecture and memory hierarchy, and show the full code in CUDA C++. Finally, I will discuss the arithmetic intensity of the kernel and benchmark its performance on the following NVIDIA GPUs: Tesla T4 (2017), Ampere A100-80GB (2020), Hopper H100 (2022), Hopper H200 (2023), and Blackwell B200 (2024). 
 
 ### Assumed background
 I will assume the reader understands the basics of the CUDA programming model. If not, I recommend reading the first 6 chapters of Programming Massively Parallel Processors (Kirk & Hwu), an excellent resource and probably the canonical text on this topic. 
@@ -121,7 +121,7 @@ Below, we can see the runtime of our kernel on the same test suite for each GPU.
 
 
 ## 2. Tiled Matrix Multiplication
-The main issue with our memory access pattern above was that we are redundantly accessing each row N times and each column M times. Why? Recall that the output C is an M x N matrix. Therefore for $C_{1,1}$, we need to compute the dot product of row 1 of A with column 1 of B; then for $C_{2,1}$, we need to compute the dot product of row 2 of A with column 1 of B again. So we retrieve column 1 of B from global memory a total of M times. Similarly, row 1 of A is retrieved from global memroy a total of N times, since we access it once for each element in row 1 of the output.
+The main issue with our memory access pattern above was that we are redundantly accessing each row N times and each column M times. Why? Recall that the output C is an M x N matrix. Therefore for $C_{1,1}$, we need to compute the dot product of row 1 of A with column 1 of B; then for $C_{2,1}$, we need to compute the dot product of row 2 of A with column 1 of B again. So we retrieve column 1 of B from global memory a total of M times. Similarly, row 1 of A is retrieved from global memory a total of N times, since we access it once for each element in row 1 of the output.
 
 ![Memory hierarchy of an A100-40GB](images/02_a100_memory.png){width=100%}
 
@@ -205,10 +205,12 @@ __global__ void gemm_tiled_kernel(const half* A, const half* B, half* C, int M, 
 extern "C" void solve(const half* A, const half* B, half* C, int M, int N, int K, float alpha,
                       float beta) {
 
-    dim3 block(16, 16);
+    dim3 block(TILE_WIDTH, TILE_WIDTH);
     
-    dim3 grid((N + (TILE_WIDTH * COARSE_FACTOR) - 1) / (TILE_WIDTH * COARSE_FACTOR), 
-              (M + TILE_WIDTH - 1) / TILE_WIDTH); // <7>
+    dim3 grid(
+        (N + (TILE_WIDTH * COARSE_FACTOR) - 1) / (TILE_WIDTH * COARSE_FACTOR), // <7>
+        (M + TILE_WIDTH - 1) / TILE_WIDTH
+    ); 
 
     gemm_tiled_kernel<<<grid, block>>>(A, B, C, M, N, K, alpha, beta);
     cudaDeviceSynchronize();
@@ -224,7 +226,7 @@ extern "C" void solve(const half* A, const half* B, half* C, int M, int N, int K
 
 
 ### Arithmetic Intensity
-Now that we are reusing some global memory, our arithmetic intensity is higher. The coarsening factor doesn't impact the arithmetic intensity, so let's ignore it for the calculation. A single thread is computing a single output element in C, but it doesn't have to load every element in the vectors of A and B that are used for that dot product. It only has to load one element of A and one element of B per tile, and then it benefits from the other 15 elements it needs from each matrix for each tile that were loaded by other threads. Therefore we reduced the number of global memory accesses by a factor of 16. But we are performing the same number of floating point operations, so our arithmetic intensity is simply 16 times higher than that of the naive kernel. Hence the arithmetic intensity of this kernel is 8 FLOPS/B. 
+Now that we are reusing some global memory, our arithmetic intensity is higher. The coarsening factor doesn't impact the arithmetic intensity, so let's ignore it for the calculation. A single thread is computing a single output element in C, but it doesn't have to load every element in the vectors of A and B that are used for that dot product. It only has to load one element of A and one element of B per tile, and then it benefits from the other 15 elements it needs from each matrix for each tile that were loaded by other threads. Therefore we reduced the number of global memory accesses by a factor of 16. But we are performing the same number of floating point operations, so our arithmetic intensity is simply 16 times higher than that of the naive kernel. Hence the arithmetic intensity of this kernel is 8 FLOPs/B. 
 
 ### Benchmarks
 The runtime improved from our increase in arithmetic intensity. The kernel is still memory-bound though on every GPU. In the next section, we will address this by taking advantage of a fundamental hardware capability that happens to available in every GPU in our test set.
@@ -239,13 +241,368 @@ The runtime improved from our increase in arithmetic intensity. The kernel is st
 
 ## 3. Warp Matrix Multiply Accumulate
 
+Every GPU in our test suite is modern enough to be equipped with Tensor Cores: programmable matrix-multiply-and-accumulate units that deliver massively higher throughput. Each SM has many of these Tensor Cores. An individual Tensor Core performs the operation $D = A \times B + C$, where every matrix in the operation has size 4x4. We call the shape of this operation 4x4x4. Additionally, Tensor Cores natively handle mixed-precision: the input matrices A and B are expected to be half-precision (FP16), while the accumulators C and D can be either FP16 or FP32. 
+
+![Tensor Core performing a 4x4x4 matrix multiply and accumulate operation](images/04_tensor_core.png){width=90%}
+
+This capability is exposed to us as the Warp Matrix Multiply Accumulate API (WMMA). During program execution, a full warp of execution will use multiple Tensor Cores at a time in order to process a 16x16x16 MMA operation. 
+
+There are several advantages of using WMMA rather than manually programming the matrix multiply and accumulate operation like we did in previous kernels. 
+
+1. Single instruction: As opposed to issuing separate multiplication and addition instructions manually, the warp scheduler issues a single instruction to the Tensor Core hardware, which proceeds to take over the rest of the operation. GPUs have a limited rate at which they can feed instructions to the execution units, so this allows us to issue memory requests much faster and get closer to saturating the memory bus.
+2. Matrix loading: The ```load_matrix_sync``` instruction in WMMA is optimized to use 128-bit global loads. So it retrieves 16 bytes (8 halves) in a single transaction. Meanwhile, when we manually load half data, we are loading 2 bytes at a time unless we specify otherwise (discussed in a subsequent section, when we explicitly issue vectorized loads).
+3. Dedicated registers: Tensor Cores have dedicated register file data paths and accumulation buffers, laid out to maximize efficiency. We don't have to deal with register pressure (when we risk allocating too many local variables that live in registers, which can spill over to slower memory stores in we exceed the register capacity) or bank conflicts (discussed in a subsequent section). We don't have to manage all of this ourselves as it's already fully optimized when we use the Tensor Cores. 
+
 ### Annotated Code
+```cpp
+#include <cuda_runtime.h>
+#include <cuda_fp16.h>
+
+#include <mma.h>
+
+using namespace nvcuda;
+
+#define WARP_SIZE 32
+
+__global__ void gemm_wmma(const half* A, const half* B, half* C, int M, int N, int K, float alpha, float beta) {
+   
+   // Leading dimensions for Row-Major matrices
+   int lead_dim_A = K; // A: M x K. Stride between rows is K
+   int lead_dim_B = N; // B: K x N. Stride between rows is N
+   int lead_dim_C = N; // C: M x N. Stride between rows is N
+
+   // 2D grid tiling. We will have multiple warps worth of threads in the x dimension.
+   // Hence warp_col is divided by warp size. 
+   int warp_row = blockDim.y * blockIdx.y + threadIdx.y;
+   int warp_col = (blockDim.x * blockIdx.x + threadIdx.x) / WARP_SIZE;
+
+    // Declare fragments
+    wmma::fragment<wmma::matrix_a, 16, 16, 16, half, wmma::row_major> A_frag; // <1>
+    wmma::fragment<wmma::matrix_b, 16, 16, 16, half, wmma::row_major> B_frag;
+    wmma::fragment<wmma::accumulator, 16, 16, 16, float> accum_frag;
+    wmma::fragment<wmma::accumulator, 16, 16, 16, half> C_frag;
+
+    // Initialize the accumulator fragment for A * B with zeroes.
+    wmma::fill_fragment(accum_frag, 0.0f);
+
+    for (int i = 0; i < K; i += 16) { // <2>
+        // Get the starting row and column of our 16 x 16 tiles in both A and B.
+        int row_A = warp_row * 16;
+        int col_A = i;
+        int row_B = i;
+        int col_B = warp_col * 16;
+
+        // Check bounds
+        if (row_A < M && col_A < K && row_B < K && col_B < N) {
+
+            // Load matrices. 
+            wmma::load_matrix_sync(A_frag, A + row_A * lead_dim_A + col_A, lead_dim_A); // <3>
+            wmma::load_matrix_sync(B_frag, B + row_B * lead_dim_B + col_B, lead_dim_B);
+
+            // Perform MMA. 
+            wmma::mma_sync(accum_frag, A_frag, B_frag, accum_frag); // <4>
+        }
+    }
+
+    int row_C = warp_row * 16;
+    int col_C = warp_col * 16;
+
+    // Complete the GEMM operation: scale and add result fragments, then write to global memory
+    if (row_C < M && col_C < N) {
+        wmma::load_matrix_sync(C_frag, C + row_C * lead_dim_C + col_C, lead_dim_C, wmma::mem_row_major);
+
+        for (int i = 0; i < C_frag.num_elements; i++) { // <5>
+            C_frag.x[i] = __float2half(alpha * accum_frag.x[i] + beta * __half2float(C_frag.x[i]));
+        }
+
+        // Store the result in global memory
+        wmma::store_matrix_sync(C + row_C * lead_dim_C + col_C, C_frag, lead_dim_C, wmma::mem_row_major); // <6>
+    }
+}
+
+// Same as in Tiled Matrix Multiplication
+__global__ void gemm_tiled_kernel(const half* A, const half* B, half* C, int M, int N, int K, float alpha, float beta) { ... }
+
+
+extern "C" void solve(const half* A, const half* B, half* C, int M, int N, int K, float alpha, float beta) {
+
+    if (M % 16 == 0 && N % 16 == 0 && K % 16 == 0) { // <7>
+        const int WARPS_X = 4, WARPS_Y = 4;
+        dim3 blockDim(WARPS_X * WARP_SIZE, WARPS_Y); // <8>
+        
+        int num_col_tiles = N / 16;
+        int num_row_tiles = M / 16;
+        
+        dim3 gridDim(
+            (num_col_tiles + WARPS_X - 1) / WARPS_X,
+            (num_row_tiles + WARPS_Y - 1) / WARPS_Y
+        );
+        
+        gemm_wmma<<<gridDim, blockDim>>>(A, B, C, M, N, K, alpha, beta);
+    } else {
+        dim3 block(TILE_WIDTH, TILE_WIDTH);
+        dim3 grid(
+            (N + (TILE_WIDTH * COARSE_FACTOR) - 1) / (TILE_WIDTH * COARSE_FACTOR), 
+            (M + TILE_WIDTH - 1) / TILE_WIDTH
+        );
+
+        gemm_tiled_kernel<<<grid, block>>>(A, B, C, M, N, K, alpha, beta);
+    }
+}
+```
+1. **Fragments**: The operand matrices must be represented in the registers of Tensor Cores before MMA is performed. Since MMA is a warp-wide operation, these registers are distributed between the threads of a warp. Each thread holds a fragment of the overall matrix. A fragment is a templated type that accepts parameters for: the matrix the fragment holds, the shape of the overall operation, the data type, and whether the data is row or column major for the operand matrices. We pass in 16 three times for the shape of the overall operation to represent that the number of rows the fragment stores, the number of columns the fragment stores, and the dot product length are all 16.
+2. **The K-loop**: Each warp computes one 16 x 16 tile of A * B. We loop over rows of A and columns of B. Each row of A and column of B has K elements. Overall, we are computing a 16 x 16 output tile in C: C (16 x 16) = A (16 x K) * B(K x 16). However, we can only store and use 16 x 16 chunks of A and B at once for the MMA operation. Therefore we need to split K into chunks of 16. On each loop iteration, we accumulate C (16 x 16) += A (16 x 16) * B (16 x 16).
+3. **Loading into a fragment**: To load data into a fragment, we need to specify the fragment to load into, the pointer to the memory we are loading from, and the leading dimension of the matrix (so that the operation knows the stride length between rows for a row-major matrix, or between columns for a column-major matrix).
+4. **Matrix Multiply Accumulate**: Computes Arg1 = Arg2 * Arg3 + Arg4. 
+5. **Modifying data within fragments**: There are 16 x 16 = 256 elements in C_frag and 32 threads per warp. Each thread therefore holds 256 / 32 = 8 elements. So the loop will have 8 iterations. The fragment's internal storage is opaque - we don't know which thread holds each element. Luckily, this doesn't matter for element-wise operations like scaling. What about for accum_frag and C_frag? As they are declared with identical template parameters, they are guaranteed to have the same internal layout. Hence we can be sure we are adding the correct corresponding elements.
+6. **Storing back to global memory**: Here we need to pass the pointer to memory that we are storing into, the fragment we are loading from, the leading dimension of the matrix, and whether the matrix is row or column major.
+7. **Restrictions on WMMA**: WMMA strictly handles 16x16x16 operations only, so we need to check that our matrix dimensions are multiples of 16. If not, we'll launch our tiled GEMM kernel. In a later section, we will adjust our WMMA kernel to handle arbitrary matrix dimensions.
+8. **Grid Dimensions**: This works out to be (128, 4), so we have 512 total threads per block. Each row in our block has 128 threads, so a total of 4 warps, and then we have 4 rows, so we essentially have a 4x4 grid of warps in each block. Since each warp computes a 16x16 output tile, each warp is handling the same output as each block did in our tiled GEMM kernel. Since each block has a 4x4 grid of warps, we are then computing a 64x64 output tile of C for each block. We know that our matrix dimensions are divisible by 16, but they may not be divisible by 64. So at the blocks at the edge of our grid, we may have some warps that fall out of bounds of C. Luckily we have the necessary boundary checks in our kernel, so we just need to do our ceiling division here to ensure our blocks fully cover C, without worrying about if some of them go beyond the edges of C. 
+
 ### Arithmetic Intensity
+To calculate the arithmetic intensity of this kernel, we will focus on the main loop where the loading from global memory and MMA operations happen. On each loop iteration, a warp collectively loads one 16x16 tile from each of A and B. So we retrieve 512 half-precision floats for a total of 1024 bytes. Then we are modifying the running sums for a 16x16 output tile in C. For each pixel in this output tile, we are taking a dot product of two 16-element vectors, so we perform 16 multiplications and 16 additions. Therefore we perform 32 FLOPs for each pixel in the 16x16 output tile, for a total of 8192 FLOPs. Therefore, our arithmetic intensity is approximately 8192 / 1024 = 8 FLOPs/B. 
+
+Notice that this is exactly the same as the arithmetic intensity of our previous tiled matrix multiplication kernel. In this kernel, I avoided using shared memory so that I could have a very simple and clear WMMA implementation. However, in reality, we can make use of the same collaborative shared memory loading technique from our prior kernel to improve the arithmetic intensity of our WMMA kernel even further. I will do exactly this (among other improvements) in the following sections. The other aspect that I observed with this kernel is that despite having the same arithmetic intensity as our tiled matrix multiplication, it is significantly faster. This is because WMMA is a hardware-native operation. In the section introduction, we discussed the anatomy of an WMMA operation and why it is so fast, but I'll call out a few ways the arithmetic intensity here is misleading. First, although it is standard to count multiplication and addition as separate FLOPs, they are fused into a single operation on the hardware when using tensor cores. Second, we discussed that WMMA fragments live on registers instead of shared memory. This is not reflected in our arithmetic intensity (which only takes into account global memory accesses). After accessing global memory in our tiled GEMM kernel, we have just transferred it to shared memory, so we still have to pull our data again from shared memory to our compute cores. Here, we load from global memory directly to the registers of the Tensor Core. 
+
 ### Benchmarks
+| GPU Model | Memory Bandwidth | Peak FP16 Compute | Ridge Point (FLOP/Byte) | Runtime (ms) |
+| :--- | :--- | :--- | :--- | :--- |
+| **NVIDIA T4** | 320 GB/s | 65 TFLOPS | 203 | 1.68 |
+| **NVIDIA A100 (80GB)** | 2,039 GB/s | 312 TFLOPS | 153 | 0.17 |
+| **NVIDIA H100 (SXM)** | 3,350 GB/s | 989 TFLOPS | 295 | 0.10 |
+| **NVIDIA H200 (SXM)** | 4,800 GB/s | 989 TFLOPS | 206 | 0.10 |
+| **NVIDIA B200** | 8,000 GB/s | 2,500 TFLOPS | 312 | 0.10 |
+
 
 ## 4. Ping-Pong Buffer
 
 ### Annotated Code
+```cpp
+#include <cuda_runtime.h>
+#include <cuda_fp16.h>
+#include <mma.h>
+#include <cuda_pipeline_primitives.h>
+
+using namespace nvcuda;
+
+// ------------- CONFIGURATION -------------
+constexpr int BLOCK_M = 64;
+constexpr int BLOCK_N = 64; // One block computes a 64 x 64 tile of the output matrix
+constexpr int BLOCK_K = 16; // Accumulation step
+constexpr int WARP_SIZE = 32;
+constexpr int THREAD_COUNT = 128;
+constexpr int WMMA = 16;
+
+__global__ void gemm_buffer_kernel(const half* A, const half* B, half* C, int M, int N, int K, float alpha, float beta) {
+
+    // ------------- INDEX CALCULATIONS -------------
+    // Linear view for data loading: which worker out of 128 threads am I?
+    int tid = threadIdx.x;
+
+    // Global position: what tile of the output matrix am I calculating?
+    int block_row_start = blockIdx.y * BLOCK_M;
+    int block_col_start = blockIdx.x * BLOCK_N;
+
+    // As we have 128 threads per block, we have 4 warps per block, which we arrange in a 2x2 grid.
+    // As each block computes a 64 x 64 output tile, we need to assign each warp a 32 x 32 output tile.
+    int warp_id = tid / WARP_SIZE;
+    int warp_row = (warp_id / 2) * 32;
+    int warp_col = (warp_id % 2) * 32;
+
+    // We treat the A and B tiles, 64 x 16 and 16 x 64 respectively, as linear arrays of 128 8-element vectors.
+    // A tile: 64 x 16. Each row has 2 8-element vectors. 
+    int row_A = tid / 2;       // 0 to 63
+    int col_A = (tid % 2) * 8; // 0 or 8
+    // B tile: 16 x 64. Each row has 8 8-element vectors. 
+    int row_B = tid / 8;       // 0 to 7
+    int col_B = (tid % 8) * 8; // 0, 8, 16, 24, 32, 40, 48, or 56
+    // ----------------------------------------------
+
+
+    // ------------- MEMORY INITIALIZATION ----------
+    // Double Buffer: Shared Memory
+    __shared__ half sA[2][BLOCK_M * BLOCK_K]; // 64 rows, 16 cols (K)
+    __shared__ half sB[2][BLOCK_K * BLOCK_N]; // 16 rows (K), 64 cols
+
+    // Declare fragments and initialize accumulator
+    wmma::fragment<wmma::matrix_a, WMMA, WMMA, WMMA, half, wmma::row_major> a_frag;
+    wmma::fragment<wmma::matrix_b, WMMA, WMMA, WMMA, half, wmma::row_major> b_frag;
+    wmma::fragment<wmma::accumulator, WMMA, WMMA, WMMA, float> accum_frag[2][2];
+
+    for (int i = 0; i < 2; i++) {
+        for (int j = 0; j < 2; j++) {
+            wmma::fill_fragment(accum_frag[i][j], 0.0f);
+        }
+    }
+
+    // Pipeline setup
+    int stage = 0; // Alternates between 0 and 1
+    // ----------------------------------------------
+
+
+    // ------------- PROLOGUE -------------
+    // Load the first tile.
+    {
+        const half* src_A = A + (block_row_start + row_A) * K + (0 + col_A);
+        half* dst_A = &sA[stage][row_A * BLOCK_K + col_A];
+
+        const half* src_B = B + (0 + row_B) * N + (block_col_start + col_B);
+        half* dst_B = &sB[stage][row_B * BLOCK_N + col_B];
+
+        // Async copy. int4 is the size of 8 half elements
+        __pipeline_memcpy_async(dst_A, src_A, sizeof(int4)); 
+        __pipeline_memcpy_async(dst_B, src_B, sizeof(int4)); 
+
+        __pipeline_commit();
+        __pipeline_wait_prior(0);
+        __syncthreads();
+    }
+    // ------------------------------------
+
+    // ------------- MAIN LOOP -------------
+    for (int k = 0; k < K; k += BLOCK_K) {
+
+        int k_next = k + BLOCK_K;
+
+        // 1. LOAD the next tile asynchronously
+        if (k_next < K) {
+            // Turns 1 into 0 or 0 into 1
+            int next_stage = 1 - stage;
+
+            const half* src_A = A + (block_row_start + row_A) * K + (k_next + col_A);
+            half* dst_A = &sA[next_stage][row_A * BLOCK_K + col_A];
+            
+            const half* src_B = B + (k_next + row_B) * N + (block_col_start + col_B);
+            half* dst_B = &sB[next_stage][row_B * BLOCK_N + col_B];
+
+            __pipeline_memcpy_async(dst_A, src_A, sizeof(int4)); 
+            __pipeline_memcpy_async(dst_B, src_B, sizeof(int4)); 
+
+            __pipeline_commit();
+        }
+
+        // 2. MATH: process the current tile. Recall we have a 2 x 2 grid of 16 x 16 subtiles for each warp.
+        for (int i = 0; i < 2; i++) {
+            for (int j = 0; j < 2; j++) {
+                // Calculate pointer into shared memory for this sub-tile
+                int smem_row = warp_row + (i * 16);
+                int smem_col = warp_col + (j * 16);
+
+                // Load fragments from shared memory
+                half* tile_ptr_A = &sA[stage][smem_row * BLOCK_K];
+                half* tile_ptr_B = &sB[stage][smem_col];
+
+                wmma::load_matrix_sync(a_frag, tile_ptr_A, BLOCK_K);
+                wmma::load_matrix_sync(b_frag, tile_ptr_B, BLOCK_N);
+
+                // Multiply matrices and accumulate
+                wmma::mma_sync(accum_frag[i][j], a_frag, b_frag, accum_frag[i][j]);
+            }
+        }
+
+        // 3. WAIT for next tile
+        if (k + BLOCK_K < K) {
+            __pipeline_wait_prior(0);
+            __syncthreads();
+            stage = 1 - stage;
+        }
+    }
+    // ------------------------------------
+
+    __syncthreads(); // Since the syncthreads above won't execute on the last iteration
+   
+    // ------- EPILOGUE: Store C ----------
+    // Size: 64 * 64 floats = 64 * 64 * 4 bytes = 16 KB. Fits easily in modern L1/ Shared
+    __shared__ float sC[BLOCK_M * BLOCK_N];
+
+    // Warps dump their fragments to shared memory, one 16x16 subtile at a time.
+    for (int i = 0; i < 2; i++) {
+        for (int j = 0; j < 2; j++) {
+            float* subtile_ptr = sC + (warp_row + i * 16) * BLOCK_N + (warp_col + j * 16);
+            wmma::store_matrix_sync(subtile_ptr, accum_frag[i][j], BLOCK_N, wmma::mem_row_major);
+        }
+    }
+
+    // Wait for all threads to write to sC
+    __syncthreads();
+
+    // Threads move data from Shared (float) to Global (half)
+    // We have 64 * 64 = 4096 total elements to process and 128 threads. 
+    // We must process 32 elements per thread.
+    // If we vectorize this into processing 8 elements per step, we need only 4 steps per thread.
+
+    for (int i = tid * 8; i < BLOCK_M * BLOCK_N; i += THREAD_COUNT * 8) {
+        int row = i / BLOCK_N;
+        int col = i % BLOCK_N;
+
+        int global_row = block_row_start + row;
+        int global_col = block_col_start + col;
+
+        half buffer[8];
+
+        // Boundary check
+        if (global_row < M && (global_col + 7) < N) {
+
+            for (int j = 0; j < 8; j++) {
+                float val = alpha * sC[i + j];
+
+                if (beta != 0.0f) {
+                    float old_c = __half2float(C[global_row * N + global_col + j]);
+                    val += beta * old_c;
+                } 
+
+                buffer[j] = __float2half(val);
+            }
+            
+            // Vectorized store
+            *(int4*)&C[global_row * N + global_col] = *(int4*)buffer;
+
+        } else {
+            for (int j = 0; j < 8; j++) {
+                if (global_row < M && (global_col + j) < N) {
+                    int out_idx = global_row * N + global_col + j;
+
+                    float val = alpha * sC[i + j];
+
+                    if (beta != 0.0f) {
+                        float old_c = __half2float(C[out_idx]);
+                        val += beta * old_c;
+                    } 
+
+                    C[out_idx] = __float2half(val);
+                }
+            }
+        }
+    }
+}
+
+
+// Same as in Tiled Matrix Multiplication
+__global__ void gemm_tiled_kernel(const half* A, const half* B, half* C, int M, int N, int K, float alpha, float beta) { ... }
+
+
+extern "C" void solve(const half* A, const half* B, half* C, int M, int N, int K, float alpha, float beta) {
+    
+    if (M % 64 == 0 && N % 64 == 0 && K % 16 == 0) {
+        
+        dim3 blockDim(THREAD_COUNT);
+        dim3 gridDim(N / BLOCK_N, M / BLOCK_M);
+        gemm_buffer_kernel<<<gridDim, blockDim>>>(A, B, C, M, N, K, alpha, beta);
+
+    } else {
+
+        dim3 block(TILE_WIDTH, TILE_WIDTH);
+        dim3 grid(
+            (N + (TILE_WIDTH * COARSE_FACTOR) - 1) / (TILE_WIDTH * COARSE_FACTOR), 
+            (M + TILE_WIDTH - 1) / TILE_WIDTH
+        );
+
+        gemm_tiled_kernel<<<grid, block>>>(A, B, C, M, N, K, alpha, beta);
+
+    }
+}
+```
+
 ### Arithmetic Intensity
 ### Benchmarks
 
