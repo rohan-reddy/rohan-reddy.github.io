@@ -44,13 +44,10 @@ Since GEMM dominates the runtime, even a small percentage improvement in kernel 
 ### Problem setup
 As I iterate on GEMM kernels, I will test them on the General Matrix Multiplication test suite and infrastructure on LeetGPU.com. As per the problem setup there, I will only be using native capabilities of the GPUs, so no libraries like CuTe or cuBLAS. The test suite is hidden, but the known constraints are that each of the matrix dimensions $M$, $N$, and $K$ are between 16 and 4096. So the input matrices range from very small (a few hundred elements) to fairly large (16 million elements). The input matrices A and B are given as type half (half-precision floating point number). Lower than usual precision floats are common in AI workloads as they take up less space and allow for higher throughput. For improved accuracy, the computation of the GEMM output will be done using full-precision floats, but the final storage will also be as a half-precision float.
 
-For each kernel, I will explain the algorithm, how it interacts with the GPU architecture and memory hierarchy, and show the full code in CUDA C++. Finally, I will discuss the computational intensity of the kernel and benchmark its performance on the following NVIDIA GPUs: Tesla T4 (2017), Ampere A100-80GB (2020), Hopper H100 (2022), Hopper H200 (2023), and Blackwell B200 (2024). 
+For each kernel, I will explain the algorithm, how it interacts with the GPU architecture and memory hierarchy, and show the full code in CUDA C++. Finally, I will discuss the arithmeticc intensity of the kernel and benchmark its performance on the following NVIDIA GPUs: Tesla T4 (2017), Ampere A100-80GB (2020), Hopper H100 (2022), Hopper H200 (2023), and Blackwell B200 (2024). 
 
 ### Assumed background
-I will assume the reader has at least the following understanding of the CUDA programming model: as a programmer, when we ask the GPU to execute a CUDA kernel, we first decide on the dimensions of a grid of threads that will be launched. Threads are grouped into blocks, and multiple blocks are assigned to each Streaming Multiprocessor (SMs). A block is resident on an SM until all of its threads have completed, at which point it is evicted. Multiple blocks can be resident at a time on an SM, and the SM will execute whichever threads are ready for compute and not waiting for memory, in order to hide memory latency. GPUs have several types of memory: registers, shared memory, L1 and L2 caches, constant memory, and global memory. Using these types of memory effectively is crucial for maximizing performance. Performance can vary widely based on the specific architecture of the GPU, and we can understand how to improve a kernel by calculating its arithmetic intensity and checking whether the kernel is compute or memory bound. 
-
-If the reader is not familiar with these concepts, I refer them to Programming Massively Parallel Processors (Kirk & Hwu), an excellent resource that explains these concepts much better than I could in this post. Chapters 1 through 6 cover everything listed above.
-
+I will assume the reader understands the basics of the CUDA programming model. If not, I recommend reading the first 6 chapters of Programming Massively Parallel Processors (Kirk & Hwu), an excellent resource and probably the canonical text on this topic. 
 
 
 ## 1. Naive Matrix Multiplication
@@ -106,12 +103,11 @@ extern "C" void solve(const half* A, const half* B, half* C, int M, int N, int K
 3. **The Bottleneck**: This line is the performance killer. For every single pixel in C, we are fetching the entire row of A and column of B from Global Memory (DRAM). 
 4. **Host Wrapper**: `extern "C"` prevents C++ name mangling, allowing us to easily call this function from ctypes (Python) or PyTorch extensions later in the project.
 
-### Roofline Model
+### Arithmetic Intensity
 For each output element of C, we load K elements of A and K elements of B in order to compute a dot product. For each pair of elements in the dot product, we multiply them together and then add the result to the running sum. Therefore, for every 2 halves we load from global memory (a total of 4 bytes), we perform 2 floating point operations. So our computational intensity is 2 FLOPs divided by 4 bytes, or 0.5 FLOP/B.
 
-Below, we can see the roofline model for our test suite of GPUs, compared to the computational intensity of our first kernel. This kernel will be memory-bound on every GPU. Our first course of action to improve the performance of our kernel should be to rethink our memory access pattern.
-
-Due to the hidden test suite, we technically don't know the FLOPS throughput of our kernel on each GPU. However we have the runtime, so we can look at that as a proxy, and compare the computational intensity of the kernel to the ridge point of each GPU to see how close we are to saturating the memory bandwidth or not. This should be accurate for determining if we are compute or memory bound.
+### Benchmarks
+Below, we can see the runtime of our kernel on the same test suite for each GPU. We can also compare the arithmetic intensity of the kernel to the ridge point of each GPU (the arithmetic intensity at which kernels switch from memory-bound to compute-bound). This kernel is highly memory-bound on every GPU. Our first course of action to improve the performance of our kernel should be to rethink our memory access pattern.
 
 | GPU Model | Memory Bandwidth | Peak FP16 Compute | Ridge Point (FLOP/Byte) | Runtime (ms) |
 | :--- | :--- | :--- | :--- | :--- |
@@ -121,9 +117,140 @@ Due to the hidden test suite, we technically don't know the FLOPS throughput of 
 | **NVIDIA H200 (SXM)** | 4,800 GB/s | 989 TFLOPS | **206** | 0.53|
 | **NVIDIA B200** | 8,000 GB/s | 2,500 TFLOPS | **312** | 0.50 |
 
-: Benchmark Targets: The Ridge Point represents the arithmetic intensity required to max out the GPU's compute. Below this number, the kernel is memory bound.
+: If our arithmetic intensity is below the Ridge Point, kernels are memory bound. Above the Ridge Point, kernels are compute bound. 
 
 
 ## 2. Tiled Matrix Multiplication
+The main issue with our memory access pattern above was that we are redundantly accessing each row N times and each column M times. Why? Recall that the output C is an M x N matrix. Therefore for $C_{1,1}$, we need to compute the dot product of row 1 of A with column 1 of B; then for $C_{2,1}$, we need to compute the dot product of row 2 of A with column 1 of B again. So we retrieve column 1 of B from global memory a total of M times. Similarly, row 1 of A is retrieved from global memroy a total of N times, since we access it once for each element in row 1 of the output.
+
+![Memory hierarchy of an A100-40GB](images/02_a100_memory.png){width=100%}
+
+When we execute our kernel, we pass it a grid configuration that defines a total number of blocks and how we can index them, and a total number of threads per block and how we can index them. Multiple blocks will be assigned to a single Streaming Multiprocessor (SM) of the GPU at any given time. So all threads in an individual block have access to the same Shared Memory and L1 Cache on their resident Streaming Multiprocessor during execution. We can take advantage of this local memory to reduce our global memory accesses. This pattern is known as locality.
+
+![Visualization of tiled matrix multiplication](images/03_tiled_mm.png){width=100%}
+
+In tiled matrix multiplication, we choose a tile size which will comprise the total threads in a single block. We will choose 16 x 16 as our tile size so that we have a nice total of 256 threads per block. (32 x 32 would also work, but beyond that we need to be cognizant of hardware restrictions on the maximum number of threads per block). We then loop over a wide row in A and a wide column in B, one tile at a time, as shown above. During each loop iteration, we have a single tile in A and tile in B to process. Each thread is responsible for loading in one element each from A and B to the block's shared memory. Then in an inner loop, we compute the product of those tiles and add it to the running sum for the output tile. By the end of the outer loop, we have loaded in and processed all elements required for the final value of elements in the 16 x 16 output tile, and so we can write to global memory.
+
+One additional optimization we introduce here is thread coarsening. This means that each thread is tasked with doing more work independently. The advantage of this approach is that if our grid ends up launching more total blocks than the hardware can assign to its SMs, then the blocks will inevitably be queued for assignment and execution. In that case, the blocks will be executed serially anyway, so we may as well have threads do more work in the first place and reduce some redundant data loading and synchronization overhead. However, we must be careful not to coarsen so much that we are no longer taking full advantage of the hardware. For our tiled matrix multiplication kernel, it can make sense for large matrices to have some coarsening. This is because although we have reduced redundancy in global memory accesses, we still will access the same "wide row" in A in two different blocks for two side-by-side output tiles in C. We can experiment with having a thread coarsening factor of 2, which means each block will process two output tiles in C rather than one.
+
+### Annotated Code
+
+```cpp
+#include <cuda_fp16.h>
+#include <cuda_runtime.h>
+
+#define TILE_WIDTH 16
+#define COARSE_FACTOR 2
+
+__global__ void gemm_tiled_kernel(const half* A, const half* B, half* C, int M, int N, int K, float alpha, float beta) {
+    
+    __shared__ float As[TILE_WIDTH][TILE_WIDTH]; // <1>
+    __shared__ float Bs[TILE_WIDTH][TILE_WIDTH];
+
+    int row = TILE_WIDTH * blockIdx.y + threadIdx.y;
+    int colStart = COARSE_FACTOR * TILE_WIDTH * blockIdx.x + threadIdx.x; // <2>
+
+    float sum[COARSE_FACTOR]; 
+    #pragma unroll // <3>
+    for (int c = 0; c < COARSE_FACTOR; c++) {
+        sum[c] = 0.0f;
+    }
+
+    // Loop over the K-dimension (shared dimension)
+    for (int phase = 0; phase < (K + TILE_WIDTH - 1) / TILE_WIDTH; phase++) {
+        
+        // --- Load A ---
+        // A is (M x K). 
+        // Row comes from global 'row'. 
+        // Col comes from 'phase' and 'threadIdx.x'.
+        int a_col = phase * TILE_WIDTH + threadIdx.x;
+        As[threadIdx.y][threadIdx.x] = 
+            (row < M && a_col < K) ? 
+            __half2float(A[row * K + a_col]) : 0.0f; // <4>
+
+        #pragma unroll
+        for (int c = 0; c < COARSE_FACTOR; c++) {
+            int col = colStart + c * TILE_WIDTH;
+
+            // --- Load B ---
+            // B is (K x N). 
+            // Row comes from 'phase' and 'threadIdx.y'. 
+            // Col comes from global 'col'.
+            int b_row = phase * TILE_WIDTH + threadIdx.y;
+            
+            Bs[threadIdx.y][threadIdx.x] = 
+                (b_row < K && col < N) ?
+                __half2float(B[b_row * N + col]) : 0.0f; 
+            
+            __syncthreads(); // <5>
+
+            for (int j = 0; j < TILE_WIDTH; j++) {
+                sum[c] += As[threadIdx.y][j] * Bs[j][threadIdx.x];
+            }
+            __syncthreads();
+        }
+    }
+
+    #pragma unroll
+    for (int c = 0; c < COARSE_FACTOR; c++) {
+        int col = colStart + c * TILE_WIDTH;
+        if (row < M && col < N) {// <6>
+            int idx = row * N + col; // C is (M x N), stride is N
+            float initial_val = __half2float(C[idx]);
+            C[idx] = __float2half(alpha * sum[c] + beta * initial_val);
+        }
+    }
+}
+
+extern "C" void solve(const half* A, const half* B, half* C, int M, int N, int K, float alpha,
+                      float beta) {
+
+    dim3 block(16, 16);
+    
+    dim3 grid((N + (TILE_WIDTH * COARSE_FACTOR) - 1) / (TILE_WIDTH * COARSE_FACTOR), 
+              (M + TILE_WIDTH - 1) / TILE_WIDTH); // <7>
+
+    gemm_kernel<<<grid, block>>>(A, B, C, M, N, K, alpha, beta);
+    cudaDeviceSynchronize();
+}
+```
+1. **Shared memory**: We declare our block shared memory. One can also dynamically pass the total size of block shared memory to the kernel at runtime if desired. In our case, we have a predetermined tile width. Note that we need to be cognizant of the total shared memory available on an SM. Our oldest GPU, the T4, has 64 KB of shared memory per SM. Here, we have two arrays of 16 x 16 floats each, so 512 total floats, so 4 KB. We're well within the limits.
+2. **Coarsening**: We set COARSE_FACTOR to 2, so each thread is going to load in 2 elements each from A and B, and compute 2 output elements in C. We are loading in two horizontal tiles at a time per block, so we need to apply our coarsening factor to our column computation.
+3. **Loop unrolling**: ```#pragma unroll``` is a directive that asks the compiler to try to unroll the loop fully, especially if the total number of iterations is known at compile time. To unroll a loop means to duplicate the code in the loop body rather than perform a condition check and a jump back to the start of the loop body. This allows us to avoid the execution speed cost of checking the loop condition, with the tradeoff of increasing code size. From here on out, we will typically unroll any loop with a constant number of iterations.
+4. **Boundary checks**: Our tiles are a fixed size. So if our matrix dimensions are not all multiples of 16, we will have some tiles that aren't fully contained within the input matrices and try to access out-of-bound indices. We can simply set these values to 0 in shared memory so that they accumulate to 0 and don't impact the result.
+5. **```__syncthreads()```**: This instruction forces each thread in the block to halt here and wait until every other thread in the block reaches this point. This first syncthreads command is known as a Read-After-Write hazard, and the one after it is known as a Write-After-Read hazard. In the first case, individual threads rely on reading shared memory that other threads in their block are writing to. In the second case, if we don't have a barrier, then some threads risk proceeding to the next loop iteration and modifying shared memory before other threads have read it for their computation on the previous iteration.
+6. **Another boundary check**: When we write to C, we again need to check that we are within bounds, since some tiles may not be fully contained at the end of the grid. 
+7. **Grid calculation with coarsening**: We adjust our grid calculation to account for the coarsening in the horizontal dimension; this impacts the total number of blocks we need horizontally. 
 
 
+
+
+### Arithmetic Intensity
+### Benchmarks
+
+## 3. Warp Matrix Multiply Accumulate
+
+### Annotated Code
+### Arithmetic Intensity
+### Benchmarks
+
+## 4. Ping-Pong Buffer
+
+### Annotated Code
+### Arithmetic Intensity
+### Benchmarks
+
+## 5. Swizzling
+
+### Annotated Code
+### Arithmetic Intensity
+### Benchmarks
+
+## 6. Arbitrary Matrix Dimensions
+### Annotated Code
+### Arithmetic Intensity
+### Benchmarks
+
+## Further Optimizations
+
+## Additional Reading
