@@ -44,7 +44,7 @@ Since GEMM dominates the runtime, even a small percentage improvement in kernel 
 ### Problem setup
 As I iterate on GEMM kernels, I will test them on the General Matrix Multiplication test suite and infrastructure on LeetGPU.com. As per the problem setup there, I will only be using native capabilities of the GPUs, so no libraries like CuTe or cuBLAS. The test suite is hidden, but the known constraints are that each of the matrix dimensions $M$, $N$, and $K$ are between 16 and 4096. So the input matrices range from very small (a few hundred elements) to fairly large (16 million elements). The input matrices A and B are given as type half (half-precision floating point number). Lower than usual precision floats are common in AI workloads as they take up less space and allow for higher throughput. For improved accuracy, the computation of the GEMM output will be done using full-precision floats, but the final storage will also be as a half-precision float.
 
-For each kernel, I will explain the algorithm, how it interacts with the GPU architecture and memory hierarchy, and show the full code in CUDA C++. Finally, I will discuss the arithmetic intensity of the kernel and benchmark its performance on the following NVIDIA GPUs: Tesla T4 (2017), Ampere A100-80GB (2020), Hopper H100 (2022), Hopper H200 (2023), and Blackwell B200 (2024). 
+For each kernel, I will explain the algorithm, how it interacts with the GPU architecture and memory hierarchy, and show the full code in CUDA C++. Finally, I will discuss the computational intensity of the kernel and benchmark its performance on the following NVIDIA GPUs: Tesla T4 (2017), Ampere A100-80GB (2020), Hopper H100 (2022), Hopper H200 (2023), and Blackwell B200 (2024). 
 
 ### Assumed background
 I will assume the reader has at least the following understanding of the CUDA programming model: as a programmer, when we ask the GPU to execute a CUDA kernel, we first decide on the dimensions of a grid of threads that will be launched. Threads are grouped into blocks, and multiple blocks are assigned to each Streaming Multiprocessor (SMs). A block is resident on an SM until all of its threads have completed, at which point it is evicted. Multiple blocks can be resident at a time on an SM, and the SM will execute whichever threads are ready for compute and not waiting for memory, in order to hide memory latency. GPUs have several types of memory: registers, shared memory, L1 and L2 caches, constant memory, and global memory. Using these types of memory effectively is crucial for maximizing performance. Performance can vary widely based on the specific architecture of the GPU, and we can understand how to improve a kernel by calculating its arithmetic intensity and checking whether the kernel is compute or memory bound. 
@@ -88,8 +88,7 @@ __global__ void gemm_naive_kernel(const half* A, const half* B, half* C,
 }
 
 // Wrapper function to be called from Host
-extern "C" void solve(const half* A, const half* B, half* C, int M, int N, int K, float alpha,
-                      float beta) { // <4>
+extern "C" void solve(const half* A, const half* B, half* C, int M, int N, int K, float alpha, float beta) { // <4>
 
     dim3 block(16, 16);
     // Grid calculation: ensures we cover the entire matrix (ceiling division)
@@ -107,32 +106,24 @@ extern "C" void solve(const half* A, const half* B, half* C, int M, int N, int K
 3. **The Bottleneck**: This line is the performance killer. For every single pixel in C, we are fetching the entire row of A and column of B from Global Memory (DRAM). 
 4. **Host Wrapper**: `extern "C"` prevents C++ name mangling, allowing us to easily call this function from ctypes (Python) or PyTorch extensions later in the project.
 
-### Arithmetic Intensity
-For each output element of C, we load K elements of A and K elements of B in order to compute a dot product. For each pair of elements in the dot product, we multiply them together and then add the result to the running sum. Therefore, for every 2 halves we load from global memory (a total of 4 bytes), we perform 2 floating point operations with those halves. So our arithmetic intensity is 2 FLOPs divided by 4 bytes, or 0.5 FLOP/B.
+### Roofline Model
+For each output element of C, we load K elements of A and K elements of B in order to compute a dot product. For each pair of elements in the dot product, we multiply them together and then add the result to the running sum. Therefore, for every 2 halves we load from global memory (a total of 4 bytes), we perform 2 floating point operations. So our computational intensity is 2 FLOPs divided by 4 bytes, or 0.5 FLOP/B.
 
-Below, we can see the roofline model for our test suite of GPUs, compared to the arithmetic intensity of our first kernel. This kernel will be memory-bound on every GPU. Our first course of action to improve the performance of our kernel should be to rethink our memory access pattern.
+Below, we can see the roofline model for our test suite of GPUs, compared to the computational intensity of our first kernel. This kernel will be memory-bound on every GPU. Our first course of action to improve the performance of our kernel should be to rethink our memory access pattern.
+
+Due to the hidden test suite, we technically don't know the FLOPS throughput of our kernel on each GPU. However we have the runtime, so we can look at that as a proxy, and compare the computational intensity of the kernel to the ridge point of each GPU to see how close we are to saturating the memory bandwidth or not. This should be accurate for determining if we are compute or memory bound.
+
+| GPU Model | Memory Bandwidth | Peak FP16 Compute | Ridge Point (FLOP/Byte) | Runtime (ms) |
+| :--- | :--- | :--- | :--- | :--- |
+| **NVIDIA T4** | 320 GB/s | 65 TFLOPS | **203** | 8.49 |
+| **NVIDIA A100 (80GB)** | 2,039 GB/s | 312 TFLOPS | **153** | 1.03 |
+| **NVIDIA H100 (SXM)** | 3,350 GB/s | 989 TFLOPS | **295** | 0.54 |
+| **NVIDIA H200 (SXM)** | 4,800 GB/s | 989 TFLOPS | **206** | 0.53|
+| **NVIDIA B200** | 8,000 GB/s | 2,500 TFLOPS | **312** | 0.50 |
+
+: Benchmark Targets: The Ridge Point represents the arithmetic intensity required to max out the GPU's compute. Below this number, the kernel is memory bound.
 
 
 ## 2. Tiled Matrix Multiplication
 
-To move beyond the naive implementation, we must address the primary bottleneck of GPU computing: **Memory Bandwidth**.
-
-In a naive implementation, every thread loads its required row of $A$ and column of $B$ directly from global memory (HBM). This results in massive redundancy. For a tile of size $T \times T$, the naive approach loads data $2T^2 \times N$ times.
-
-**Tiling** exploits the data reuse inherent in matrix multiplication. By loading a small block of data into **Shared Memory** (a user-managed cache that is roughly 100x faster than HBM), threads in a block can repeatedly access the same data without hitting global memory.
-
-### Algorithm
-
-The strategy is to divide the output matrix $C$ into tiles. A standard Thread Block (e.g., $16 \times 16$) is responsible for computing one tile of $C$.
-
-1.  **Collaborative Load:** All threads in the block work together to load a sub-tile of $A$ and a sub-tile of $B$ from global memory into shared memory.
-2.  **Synchronization:** A barrier (`__syncthreads()`) ensures all data is loaded.
-3.  **Compute:** Threads calculate the partial dot product using the data in shared memory.
-4.  **Iterate:** The block moves to the next "phase" (the next chunk of the K-dimension) and repeats.
-
-## Visualizing the Data Flow
-
-### Memory Hierarchy
-
-Before looking at the code, it is crucial to map the physical movement of data. We are explicitly moving data from the massive but slow High Bandwidth Memory (HBM) into the tiny but fast Shared Memory (SRAM).
 

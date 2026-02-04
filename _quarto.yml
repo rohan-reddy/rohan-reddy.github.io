@@ -1,6 +1,9 @@
 project:
   type: website
 
+python:
+  - .venv/bin/python
+
 website:
   description: "A blog built with Quarto"
 
