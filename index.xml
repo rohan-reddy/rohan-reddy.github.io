@@ -461,35 +461,35 @@ font-style: inherit;">}</span></span><div class="code-annotation-gutter-bg"></di
 <td style="text-align: left;"><strong>NVIDIA T4</strong></td>
 <td style="text-align: left;">320 GB/s</td>
 <td style="text-align: left;">65 TFLOPS</td>
-<td style="text-align: left;"><strong>203</strong></td>
+<td style="text-align: left;">203</td>
 <td style="text-align: left;">8.49</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;"><strong>NVIDIA A100 (80GB)</strong></td>
 <td style="text-align: left;">2,039 GB/s</td>
 <td style="text-align: left;">312 TFLOPS</td>
-<td style="text-align: left;"><strong>153</strong></td>
+<td style="text-align: left;">153</td>
 <td style="text-align: left;">1.03</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;"><strong>NVIDIA H100 (SXM)</strong></td>
 <td style="text-align: left;">3,350 GB/s</td>
 <td style="text-align: left;">989 TFLOPS</td>
-<td style="text-align: left;"><strong>295</strong></td>
+<td style="text-align: left;">295</td>
 <td style="text-align: left;">0.54</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;"><strong>NVIDIA H200 (SXM)</strong></td>
 <td style="text-align: left;">4,800 GB/s</td>
 <td style="text-align: left;">989 TFLOPS</td>
-<td style="text-align: left;"><strong>206</strong></td>
+<td style="text-align: left;">206</td>
 <td style="text-align: left;">0.53</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;"><strong>NVIDIA B200</strong></td>
 <td style="text-align: left;">8,000 GB/s</td>
 <td style="text-align: left;">2,500 TFLOPS</td>
-<td style="text-align: left;"><strong>312</strong></td>
+<td style="text-align: left;">312</td>
 <td style="text-align: left;">0.50</td>
 </tr>
 </tbody>
@@ -508,7 +508,7 @@ font-style: inherit;">}</span></span><div class="code-annotation-gutter-bg"></di
 <p>When we execute our kernel, we pass it a grid configuration that defines a total number of blocks and how we can index them, and a total number of threads per block and how we can index them. Multiple blocks will be assigned to a single Streaming Multiprocessor (SM) of the GPU at any given time. So all threads in an individual block have access to the same Shared Memory and L1 Cache on their resident Streaming Multiprocessor during execution. We can take advantage of this local memory to reduce our global memory accesses. This pattern is known as locality.</p>
 <div class="quarto-figure quarto-figure-center page-columns page-full">
 <figure class="figure page-columns page-full">
-<p><img src="https://rohan-reddy.github.io/posts/001-gemm-optimization/images/03_tiled_mm.png" class="img-fluid figure-img" style="width:100.0%"></p>
+<p><img src="https://rohan-reddy.github.io/posts/001-gemm-optimization/images/03_tiled_mm.png" class="img-fluid figure-img" style="width:95.0%"></p>
 <figcaption class="margin-caption">Visualization of tiled matrix multiplication</figcaption>
 </figure>
 </div>
@@ -1174,7 +1174,7 @@ font-style: inherit;">/</span> TILE_WIDTH<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">);</span></span>
 <span id="annotated-cell-2-74"></span>
-<span id="annotated-cell-2-75">    gemm_kernel<span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-2-75">    gemm_tiled_kernel<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">&lt;&lt;&lt;</span>grid<span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -1236,9 +1236,66 @@ font-style: inherit;">}</span></span><div class="code-annotation-gutter-bg"></di
 </section>
 <section id="arithmetic-intensity-1" class="level3">
 <h3 class="anchored" data-anchor-id="arithmetic-intensity-1">Arithmetic Intensity</h3>
+<p>Now that we are reusing some global memory, our arithmetic intensity is higher. The coarsening factor doesn’t impact the arithmetic intensity, so let’s ignore it for the calculation. A single thread is computing a single output element in C, but it doesn’t have to load every element in the vectors of A and B that are used for that dot product. It only has to load one element of A and one element of B per tile, and then it benefits from the other 15 elements it needs from each matrix for each tile that were loaded by other threads. Therefore we reduced the number of global memory accesses by a factor of 16. But we are performing the same number of floating point operations, so our arithmetic intensity is simply 16 times higher than that of the naive kernel. Hence the arithmetic intensity of this kernel is 8 FLOPS/B.</p>
 </section>
 <section id="benchmarks-1" class="level3">
 <h3 class="anchored" data-anchor-id="benchmarks-1">Benchmarks</h3>
+<p>The runtime improved from our increase in arithmetic intensity. The kernel is still memory-bound though on every GPU. In the next section, we will address this by taking advantage of a fundamental hardware capability that happens to available in every GPU in our test set.</p>
+<table class="table">
+<colgroup>
+<col style="width: 20%">
+<col style="width: 20%">
+<col style="width: 20%">
+<col style="width: 20%">
+<col style="width: 20%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;">GPU Model</th>
+<th style="text-align: left;">Memory Bandwidth</th>
+<th style="text-align: left;">Peak FP16 Compute</th>
+<th style="text-align: left;">Ridge Point (FLOP/Byte)</th>
+<th style="text-align: left;">Runtime (ms)</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;"><strong>NVIDIA T4</strong></td>
+<td style="text-align: left;">320 GB/s</td>
+<td style="text-align: left;">65 TFLOPS</td>
+<td style="text-align: left;">203</td>
+<td style="text-align: left;">6.73</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><strong>NVIDIA A100 (80GB)</strong></td>
+<td style="text-align: left;">2,039 GB/s</td>
+<td style="text-align: left;">312 TFLOPS</td>
+<td style="text-align: left;">153</td>
+<td style="text-align: left;">0.72</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><strong>NVIDIA H100 (SXM)</strong></td>
+<td style="text-align: left;">3,350 GB/s</td>
+<td style="text-align: left;">989 TFLOPS</td>
+<td style="text-align: left;">295</td>
+<td style="text-align: left;">0.37</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><strong>NVIDIA H200 (SXM)</strong></td>
+<td style="text-align: left;">4,800 GB/s</td>
+<td style="text-align: left;">989 TFLOPS</td>
+<td style="text-align: left;">206</td>
+<td style="text-align: left;">0.36</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><strong>NVIDIA B200</strong></td>
+<td style="text-align: left;">8,000 GB/s</td>
+<td style="text-align: left;">2,500 TFLOPS</td>
+<td style="text-align: left;">312</td>
+<td style="text-align: left;">0.33</td>
+</tr>
+</tbody>
+</table>
 </section>
 </section>
 <section id="warp-matrix-multiply-accumulate" class="level2">
