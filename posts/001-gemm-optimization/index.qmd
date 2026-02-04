@@ -364,7 +364,7 @@ extern "C" void solve(const half* A, const half* B, half* C, int M, int N, int K
 ### Arithmetic Intensity
 To calculate the arithmetic intensity of this kernel, we will focus on the main loop where the loading from global memory and MMA operations happen. On each loop iteration, a warp collectively loads one 16x16 tile from each of A and B. So we retrieve 512 half-precision floats for a total of 1024 bytes. Then we are modifying the running sums for a 16x16 output tile in C. For each pixel in this output tile, we are taking a dot product of two 16-element vectors, so we perform 16 multiplications and 16 additions. Therefore we perform 32 FLOPs for each pixel in the 16x16 output tile, for a total of 8192 FLOPs. Therefore, our arithmetic intensity is approximately 8192 / 1024 = 8 FLOPs/B. 
 
-Notice that this is exactly the same as the arithmetic intensity of our previous tiled matrix multiplication kernel. In this kernel, I avoided using shared memory so that I could have a very simple and clear WMMA implementation. However, in reality, we can make use of the same collaborative shared memory loading technique from our prior kernel to improve the arithmetic intensity of our WMMA kernel even further. I will do exactly this (among other improvements) in the following sections. The other aspect that I observed with this kernel is that despite having the same arithmetic intensity as our tiled matrix multiplication, it is significantly faster. This is because WMMA is a hardware-native operation. In the section introduction, we discussed the anatomy of an WMMA operation and why it is so fast, but I'll call out a few ways the arithmetic intensity here is misleading. First, although it is standard to count multiplication and addition as separate FLOPs, they are fused into a single operation on the hardware when using tensor cores. Second, we discussed that WMMA fragments live on registers instead of shared memory. This is not reflected in our arithmetic intensity (which only takes into account global memory accesses). After accessing global memory in our tiled GEMM kernel, we have just transferred it to shared memory, so we still have to pull our data again from shared memory to our compute cores. Here, we load from global memory directly to the registers of the Tensor Core. 
+Notice that this is exactly the same as the arithmetic intensity of our previous tiled matrix multiplication kernel. In this kernel, I avoided using shared memory so that I could have a very simple and clear WMMA implementation. However, in reality, we can make use of the same collaborative shared memory loading technique from our prior kernel to improve the arithmetic intensity of our WMMA kernel even further. I will do exactly this (among other improvements) in subsequent sections. The other aspect that I observed with this kernel is that despite having the same arithmetic intensity as our tiled matrix multiplication, it is significantly faster. This is because WMMA is a hardware-native operation. In the section introduction, we discussed the anatomy of an WMMA operation and why it is so fast, but I'll call out a few ways the arithmetic intensity here is misleading. First, although it is standard to count multiplication and addition as separate FLOPs, they are fused into a single operation on the hardware when using tensor cores. Second, we discussed that WMMA fragments live on registers instead of shared memory. This is not reflected in our arithmetic intensity (which only takes into account global memory accesses). After accessing global memory in our tiled GEMM kernel, we have just transferred it to shared memory, so we still have to pull our data again from shared memory to our compute cores. Here, we load from global memory directly to the registers of the Tensor Core. 
 
 ### Benchmarks
 | GPU Model | Memory Bandwidth | Peak FP16 Compute | Ridge Point (FLOP/Byte) | Runtime (ms) |
@@ -376,7 +376,21 @@ Notice that this is exactly the same as the arithmetic intensity of our previous
 | **NVIDIA B200** | 8,000 GB/s | 2,500 TFLOPS | 312 | 0.10 |
 
 
-## 4. Ping-Pong Buffer
+## 4. Double Buffer
+
+The next improvement we can make to our kernel is the use of a double buffer. The goal of a double buffer is to hide the latency of fetching data from global memory. In our current implementation, when threads request data from global memory, the compute cores have to pause while we wait for the data to arrive. Then we start computing, but our memory units are now sitting idle. When we're done, we request data again and repeat the cycle. At any given time, either our compute cores or memory units are sitting idle. 
+
+Instead, before we compute the current tile, we can issue an asynchronous request to load data for the next tile. Then our memory bus will load data in for the next tile while we compute the current tile. There is a dedicated hardware unit in the GPU that handles this asynchronous loading, the Async Copy Engine. 
+
+The double buffer is so named because we declare shared memory that is double the size of what we need to compute on. That way, we can use half of the buffer to load the next tiles of A and B from global memory to shared memory, and the other half of the buffer holds the currently loaded data that we feed to our Tensor Cores. We can track which half of the buffer is ready and which is being loaded. So our process is as follows within each loop iteration:
+
+1. Asynchronously request data for the next tile to the half of the buffer we are not about to use.
+2. WMMA compute on the current tile, using the half of the buffer that is ready.
+3. Barrier wait until the asynchronous request is complete. Then swap the ```stage``` index that tells us which half of the buffer is ready, and proceed to the next loop iteration.
+
+There are a few other optimizations related to the data loading and grid configuration that we'll pack into this kernel that warrant some explanation ahead of time. First, we will have each block be composed of 4 warps in a 2x2 grid (so 128 total threads). Each warp will be responsible for computing a 32x32 output tile of C, so in total one block will compute a 64x64 output tile. To accomplish this, we will still loop over the K-dimension in a wide row in A and wide column in B, just as pictured in the image from tiled matrix multiplication. However, we will specify the wide row in A to have 64 rows, and the wide column in B to have 64 columns. We still loop over K via increments of 16 at a time. So in each loop iteration over K, we will use a 64x16 chunk of A and a 16x64 chunk of B. This is the same process as tiled matrix multiplication, but we are now using a non-square tile. Because we have a 2x2 grid of warps, each warp will use a 32x16 chunk of A and a 16x32 chunk of B, and perform 4 WMMA operations (since they only take matrices of size 16x16). We then add their output to our accumulator fragments (4 for each warp, since each warp is responsible for a 32x32 output tile) in each loop iteration. By the time our K loop is complete, we have fully computed the value of $A \times B$ for each warp's 32x32 output tile. Put together, we get the full 64x64 output tile.
+
+The reason we do this is similar to why we loaded to shared memory in our tiled GEMM: we want to avoid redundant data loading and load as much data from global memory at once as we can usefully share across our block. By arranging our warps in 2x2 grid, we also are able to reuse more memory than if they were arranged in a straight line. For the collaborative data loading, we will use the thread ID in the block to determine what part of the current A (64x16) and B (16x64) chunks this thread will load. Each of these chunks can be treated as 128 8-half vectors, so each thread should load 8 elements. To reduce the number of instructions to load from global memory, we will employ vectorized loads to load 8 halves at once. Therefore, our A chunk can be viewed as 64 rows of 2 vectors, and our B chunk can be viewed as 8 rows of 8 vectors. We will use a vectorized store to global memory in the final section too, when possible. 
 
 ### Annotated Code
 ```cpp
@@ -405,13 +419,12 @@ __global__ void gemm_buffer_kernel(const half* A, const half* B, half* C, int M,
     int block_row_start = blockIdx.y * BLOCK_M;
     int block_col_start = blockIdx.x * BLOCK_N;
 
-    // As we have 128 threads per block, we have 4 warps per block, which we arrange in a 2x2 grid.
-    // As each block computes a 64 x 64 output tile, we need to assign each warp a 32 x 32 output tile.
-    int warp_id = tid / WARP_SIZE;
+    // What warp am I in the 2x2 grid?
+    int warp_id = tid / WARP_SIZE; // <1>
     int warp_row = (warp_id / 2) * 32;
     int warp_col = (warp_id % 2) * 32;
 
-    // We treat the A and B tiles, 64 x 16 and 16 x 64 respectively, as linear arrays of 128 8-element vectors.
+    // <2>
     // A tile: 64 x 16. Each row has 2 8-element vectors. 
     int row_A = tid / 2;       // 0 to 63
     int col_A = (tid % 2) * 8; // 0 or 8
@@ -426,12 +439,14 @@ __global__ void gemm_buffer_kernel(const half* A, const half* B, half* C, int M,
     __shared__ half sA[2][BLOCK_M * BLOCK_K]; // 64 rows, 16 cols (K)
     __shared__ half sB[2][BLOCK_K * BLOCK_N]; // 16 rows (K), 64 cols
 
-    // Declare fragments and initialize accumulator
+    // Declare fragments and initialize accumulator. 
     wmma::fragment<wmma::matrix_a, WMMA, WMMA, WMMA, half, wmma::row_major> a_frag;
     wmma::fragment<wmma::matrix_b, WMMA, WMMA, WMMA, half, wmma::row_major> b_frag;
-    wmma::fragment<wmma::accumulator, WMMA, WMMA, WMMA, float> accum_frag[2][2];
+    wmma::fragment<wmma::accumulator, WMMA, WMMA, WMMA, float> accum_frag[2][2]; // <3>
 
+    #pragma unroll
     for (int i = 0; i < 2; i++) {
+        #pragma unroll
         for (int j = 0; j < 2; j++) {
             wmma::fill_fragment(accum_frag[i][j], 0.0f);
         }
@@ -443,7 +458,7 @@ __global__ void gemm_buffer_kernel(const half* A, const half* B, half* C, int M,
 
 
     // ------------- PROLOGUE -------------
-    // Load the first tile.
+    // Load the first tile. 
     {
         const half* src_A = A + (block_row_start + row_A) * K + (0 + col_A);
         half* dst_A = &sA[stage][row_A * BLOCK_K + col_A];
@@ -452,16 +467,17 @@ __global__ void gemm_buffer_kernel(const half* A, const half* B, half* C, int M,
         half* dst_B = &sB[stage][row_B * BLOCK_N + col_B];
 
         // Async copy. int4 is the size of 8 half elements
-        __pipeline_memcpy_async(dst_A, src_A, sizeof(int4)); 
+        __pipeline_memcpy_async(dst_A, src_A, sizeof(int4)); // <4>
         __pipeline_memcpy_async(dst_B, src_B, sizeof(int4)); 
 
-        __pipeline_commit();
-        __pipeline_wait_prior(0);
+        __pipeline_commit(); // <5>
+        __pipeline_wait_prior(0); // <6>
         __syncthreads();
     }
     // ------------------------------------
 
     // ------------- MAIN LOOP -------------
+    #pragma unroll
     for (int k = 0; k < K; k += BLOCK_K) {
 
         int k_next = k + BLOCK_K;
@@ -472,7 +488,7 @@ __global__ void gemm_buffer_kernel(const half* A, const half* B, half* C, int M,
             int next_stage = 1 - stage;
 
             const half* src_A = A + (block_row_start + row_A) * K + (k_next + col_A);
-            half* dst_A = &sA[next_stage][row_A * BLOCK_K + col_A];
+            half* dst_A = &sA[next_stage][row_A * BLOCK_K + col_A]; // <7>
             
             const half* src_B = B + (k_next + row_B) * N + (block_col_start + col_B);
             half* dst_B = &sB[next_stage][row_B * BLOCK_N + col_B];
@@ -484,14 +500,16 @@ __global__ void gemm_buffer_kernel(const half* A, const half* B, half* C, int M,
         }
 
         // 2. MATH: process the current tile. Recall we have a 2 x 2 grid of 16 x 16 subtiles for each warp.
+        #pragma unroll
         for (int i = 0; i < 2; i++) {
+            #pragma unroll
             for (int j = 0; j < 2; j++) {
                 // Calculate pointer into shared memory for this sub-tile
                 int smem_row = warp_row + (i * 16);
                 int smem_col = warp_col + (j * 16);
 
                 // Load fragments from shared memory
-                half* tile_ptr_A = &sA[stage][smem_row * BLOCK_K];
+                half* tile_ptr_A = &sA[stage][smem_row * BLOCK_K]; // <8>
                 half* tile_ptr_B = &sB[stage][smem_col];
 
                 wmma::load_matrix_sync(a_frag, tile_ptr_A, BLOCK_K);
@@ -504,7 +522,7 @@ __global__ void gemm_buffer_kernel(const half* A, const half* B, half* C, int M,
 
         // 3. WAIT for next tile
         if (k + BLOCK_K < K) {
-            __pipeline_wait_prior(0);
+            __pipeline_wait_prior(0); // <9>
             __syncthreads();
             stage = 1 - stage;
         }
@@ -514,11 +532,13 @@ __global__ void gemm_buffer_kernel(const half* A, const half* B, half* C, int M,
     __syncthreads(); // Since the syncthreads above won't execute on the last iteration
    
     // ------- EPILOGUE: Store C ----------
-    // Size: 64 * 64 floats = 64 * 64 * 4 bytes = 16 KB. Fits easily in modern L1/ Shared
+    // Size: 64 * 64 floats = 64 * 64 * 4 bytes = 16 KB. Fits easily in modern L1/Shared
     __shared__ float sC[BLOCK_M * BLOCK_N];
 
     // Warps dump their fragments to shared memory, one 16x16 subtile at a time.
+    #pragma unroll
     for (int i = 0; i < 2; i++) {
+        #pragma unroll
         for (int j = 0; j < 2; j++) {
             float* subtile_ptr = sC + (warp_row + i * 16) * BLOCK_N + (warp_col + j * 16);
             wmma::store_matrix_sync(subtile_ptr, accum_frag[i][j], BLOCK_N, wmma::mem_row_major);
@@ -528,12 +548,8 @@ __global__ void gemm_buffer_kernel(const half* A, const half* B, half* C, int M,
     // Wait for all threads to write to sC
     __syncthreads();
 
-    // Threads move data from Shared (float) to Global (half)
-    // We have 64 * 64 = 4096 total elements to process and 128 threads. 
-    // We must process 32 elements per thread.
-    // If we vectorize this into processing 8 elements per step, we need only 4 steps per thread.
-
-    for (int i = tid * 8; i < BLOCK_M * BLOCK_N; i += THREAD_COUNT * 8) {
+    #pragma unroll
+    for (int i = tid * 8; i < BLOCK_M * BLOCK_N; i += THREAD_COUNT * 8) { // <10>
         int row = i / BLOCK_N;
         int col = i % BLOCK_N;
 
@@ -544,7 +560,7 @@ __global__ void gemm_buffer_kernel(const half* A, const half* B, half* C, int M,
 
         // Boundary check
         if (global_row < M && (global_col + 7) < N) {
-
+            #pragma unroll
             for (int j = 0; j < 8; j++) {
                 float val = alpha * sC[i + j];
 
@@ -560,6 +576,7 @@ __global__ void gemm_buffer_kernel(const half* A, const half* B, half* C, int M,
             *(int4*)&C[global_row * N + global_col] = *(int4*)buffer;
 
         } else {
+            #pragma unroll
             for (int j = 0; j < 8; j++) {
                 if (global_row < M && (global_col + j) < N) {
                     int out_idx = global_row * N + global_col + j;
@@ -604,6 +621,17 @@ extern "C" void solve(const half* A, const half* B, half* C, int M, int N, int K
     }
 }
 ```
+1. **Warp Grid**: As we have 128 threads per block, we have 4 warps per block, which we arrange in a 2x2 grid. Each block computes a 64 x 64 output tile, so we need to assign each warp a 32 x 32 output tile.
+2. **Data Loading**: We treat the A and B tiles, 64 x 16 and 16 x 64 respectively, as linear arrays of 128 8-element vectors. So each thread is responsible for loading 8 halves to shared memory.
+3. **Accumulator Grid**: Accumulator is a 2x2 grid because each warp is assigned a 32x32 output tile but can only compute 16x16 at a time. 
+4. ```__pipeline_memcpy_async```: Instructs the Async Copy Engine to copy data from global memory to shared memory. As this is an asynchronous operation, the command returns immediately and allows us to continue with other instructions while the memory loads. We issue a vectorized load for 8 halves worth of data at once (```sizeof(int4)```).
+5. ```__pipeline_commit```: Marks the end of a batch of copy commands. Effectively, ```memcpy_async``` adds the copy instruction to our shopping cart, and ```commit``` places the order. 
+6. ```__pipeline_wait_prior```: Pauses the thread execution until the specified number of committed batches are incomplete. Since we pass in 0, we are pausing thread execution until all asynchronous loads that were issued are complete (in our case, only a single load). In any case, after this line, we have to issue ```syncthreads``` because each thread is collaboratively loading a piece of A and B that every thread will need for compute. 
+7. **Writing to the Double Buffer**: We load into the half of the double buffer that we're not using this loop iterationn.
+8. **Reading from the Double Buffer**: We pull data for the WMMA operation from the half of the double buffer that is ready.
+9. Notice the location of this command in the main loop compared to in the prologue. We only had to issue it immediately after placing the copy command in the prologue because we needed to load the very first tile for compute. In the main loop, we don't need to hold up threads on the copy completion until we have finished all compute for this iteration.
+10. **Vectorized Store**: In this loop, we complete our GEMM operation by taking our accumulated result of A x B, scaling it by alpha, adding it to beta * C, and finally storing it in global memory. We have 64 * 64 = 4096 total elements to process and store, and 128 threads to do this. So we must process 32 elements per thread. If we vectorize this into processing 8 elements per step, we need only 4 steps per thread. However, we have an else block here that covers the tail elements once we have fewer than 8 elements left and can't do a vectorized store.
+
 
 ### Arithmetic Intensity
 ### Benchmarks
