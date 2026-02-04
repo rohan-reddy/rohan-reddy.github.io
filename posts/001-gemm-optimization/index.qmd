@@ -111,11 +111,11 @@ Below, we can see the runtime of our kernel on the same test suite for each GPU.
 
 | GPU Model | Memory Bandwidth | Peak FP16 Compute | Ridge Point (FLOP/Byte) | Runtime (ms) |
 | :--- | :--- | :--- | :--- | :--- |
-| **NVIDIA T4** | 320 GB/s | 65 TFLOPS | **203** | 8.49 |
-| **NVIDIA A100 (80GB)** | 2,039 GB/s | 312 TFLOPS | **153** | 1.03 |
-| **NVIDIA H100 (SXM)** | 3,350 GB/s | 989 TFLOPS | **295** | 0.54 |
-| **NVIDIA H200 (SXM)** | 4,800 GB/s | 989 TFLOPS | **206** | 0.53|
-| **NVIDIA B200** | 8,000 GB/s | 2,500 TFLOPS | **312** | 0.50 |
+| **NVIDIA T4** | 320 GB/s | 65 TFLOPS | 203 | 8.49 |
+| **NVIDIA A100 (80GB)** | 2,039 GB/s | 312 TFLOPS | 153 | 1.03 |
+| **NVIDIA H100 (SXM)** | 3,350 GB/s | 989 TFLOPS | 295 | 0.54 |
+| **NVIDIA H200 (SXM)** | 4,800 GB/s | 989 TFLOPS | 206 | 0.53|
+| **NVIDIA B200** | 8,000 GB/s | 2,500 TFLOPS | 312 | 0.50 |
 
 : If our arithmetic intensity is below the Ridge Point, kernels are memory bound. Above the Ridge Point, kernels are compute bound. 
 
@@ -127,7 +127,7 @@ The main issue with our memory access pattern above was that we are redundantly 
 
 When we execute our kernel, we pass it a grid configuration that defines a total number of blocks and how we can index them, and a total number of threads per block and how we can index them. Multiple blocks will be assigned to a single Streaming Multiprocessor (SM) of the GPU at any given time. So all threads in an individual block have access to the same Shared Memory and L1 Cache on their resident Streaming Multiprocessor during execution. We can take advantage of this local memory to reduce our global memory accesses. This pattern is known as locality.
 
-![Visualization of tiled matrix multiplication](images/03_tiled_mm.png){width=100%}
+![Visualization of tiled matrix multiplication](images/03_tiled_mm.png){width=95%}
 
 In tiled matrix multiplication, we choose a tile size which will comprise the total threads in a single block. We will choose 16 x 16 as our tile size so that we have a nice total of 256 threads per block. (32 x 32 would also work, but beyond that we need to be cognizant of hardware restrictions on the maximum number of threads per block). We then loop over a wide row in A and a wide column in B, one tile at a time, as shown above. During each loop iteration, we have a single tile in A and tile in B to process. Each thread is responsible for loading in one element each from A and B to the block's shared memory. Then in an inner loop, we compute the product of those tiles and add it to the running sum for the output tile. By the end of the outer loop, we have loaded in and processed all elements required for the final value of elements in the 16 x 16 output tile, and so we can write to global memory.
 
@@ -210,7 +210,7 @@ extern "C" void solve(const half* A, const half* B, half* C, int M, int N, int K
     dim3 grid((N + (TILE_WIDTH * COARSE_FACTOR) - 1) / (TILE_WIDTH * COARSE_FACTOR), 
               (M + TILE_WIDTH - 1) / TILE_WIDTH); // <7>
 
-    gemm_kernel<<<grid, block>>>(A, B, C, M, N, K, alpha, beta);
+    gemm_tiled_kernel<<<grid, block>>>(A, B, C, M, N, K, alpha, beta);
     cudaDeviceSynchronize();
 }
 ```
@@ -223,10 +223,19 @@ extern "C" void solve(const half* A, const half* B, half* C, int M, int N, int K
 7. **Grid calculation with coarsening**: We adjust our grid calculation to account for the coarsening in the horizontal dimension; this impacts the total number of blocks we need horizontally. 
 
 
-
-
 ### Arithmetic Intensity
+Now that we are reusing some global memory, our arithmetic intensity is higher. The coarsening factor doesn't impact the arithmetic intensity, so let's ignore it for the calculation. A single thread is computing a single output element in C, but it doesn't have to load every element in the vectors of A and B that are used for that dot product. It only has to load one element of A and one element of B per tile, and then it benefits from the other 15 elements it needs from each matrix for each tile that were loaded by other threads. Therefore we reduced the number of global memory accesses by a factor of 16. But we are performing the same number of floating point operations, so our arithmetic intensity is simply 16 times higher than that of the naive kernel. Hence the arithmetic intensity of this kernel is 8 FLOPS/B. 
+
 ### Benchmarks
+The runtime improved from our increase in arithmetic intensity. The kernel is still memory-bound though on every GPU. In the next section, we will address this by taking advantage of a fundamental hardware capability that happens to available in every GPU in our test set.
+
+| GPU Model | Memory Bandwidth | Peak FP16 Compute | Ridge Point (FLOP/Byte) | Runtime (ms) |
+| :--- | :--- | :--- | :--- | :--- |
+| **NVIDIA T4** | 320 GB/s | 65 TFLOPS | 203 | 6.73 |
+| **NVIDIA A100 (80GB)** | 2,039 GB/s | 312 TFLOPS | 153 | 0.72 |
+| **NVIDIA H100 (SXM)** | 3,350 GB/s | 989 TFLOPS | 295 | 0.37 |
+| **NVIDIA H200 (SXM)** | 4,800 GB/s | 989 TFLOPS | 206 | 0.36 |
+| **NVIDIA B200** | 8,000 GB/s | 2,500 TFLOPS | 312 | 0.33 |
 
 ## 3. Warp Matrix Multiply Accumulate
 
