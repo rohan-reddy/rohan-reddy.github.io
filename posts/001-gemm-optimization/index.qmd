@@ -253,6 +253,8 @@ There are several advantages of using WMMA rather than manually programming the 
 2. Matrix loading: The ```load_matrix_sync``` instruction in WMMA is optimized to use 128-bit global loads. So it retrieves 16 bytes (8 halves) in a single transaction. Meanwhile, when we manually load half data, we are loading 2 bytes at a time unless we specify otherwise (discussed in a subsequent section, when we explicitly issue vectorized loads).
 3. Dedicated registers: Tensor Cores have dedicated register file data paths and accumulation buffers, laid out to maximize efficiency. We don't have to deal with register pressure (when we risk allocating too many local variables that live in registers, which can spill over to slower memory stores in we exceed the register capacity) or bank conflicts (discussed in a subsequent section). We don't have to manage all of this ourselves as it's already fully optimized when we use the Tensor Cores. 
 
+One disadvantage of WMMA is that we are locked into the 16x16x16 operation shape. Later on, we'll adapt our kernel to handle any arbitrary matrix sizes. For now, we'll have our host code decide whether to use our WMMA kernel based on the input matrix sizes.
+
 ### Annotated Code
 ```cpp
 #include <cuda_runtime.h>
