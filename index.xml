@@ -48,7 +48,7 @@
 <section id="problem-setup" class="level3">
 <h3 class="anchored" data-anchor-id="problem-setup">Problem setup</h3>
 <p>As I iterate on GEMM kernels, I will test them on the General Matrix Multiplication test suite and infrastructure on LeetGPU.com. As per the problem setup there, I will only be using native capabilities of the GPUs, so no libraries like CuTe or cuBLAS. The test suite is hidden, but the known constraints are that each of the matrix dimensions <img src="https://latex.codecogs.com/png.latex?M">, <img src="https://latex.codecogs.com/png.latex?N">, and <img src="https://latex.codecogs.com/png.latex?K"> are between 16 and 4096. So the input matrices range from very small (a few hundred elements) to fairly large (16 million elements). The input matrices A and B are given as type half (half-precision floating point number). Lower than usual precision floats are common in AI workloads as they take up less space and allow for higher throughput. For improved accuracy, the computation of the GEMM output will be done using full-precision floats, but the final storage will also be as a half-precision float.</p>
-<p>For each kernel, I will explain the algorithm, how it interacts with the GPU architecture and memory hierarchy, and show the full code in CUDA C++. Finally, I will discuss the arithmetic intensity of the kernel and benchmark its performance on the following NVIDIA GPUs: Tesla T4 (2017), Ampere A100-80GB (2020), Hopper H100 (2022), Hopper H200 (2023), and Blackwell B200 (2024).</p>
+<p>For each kernel, I will explain the algorithm, how it interacts with the GPU architecture and memory hierarchy, and show the full code in CUDA C++. Finally, I will discuss the computational intensity of the kernel and benchmark its performance on the following NVIDIA GPUs: Tesla T4 (2017), Ampere A100-80GB (2020), Hopper H100 (2022), Hopper H200 (2023), and Blackwell B200 (2024).</p>
 </section>
 <section id="assumed-background" class="level3">
 <h3 class="anchored" data-anchor-id="assumed-background">Assumed background</h3>
@@ -287,7 +287,7 @@ font-style: inherit;">}</span></span>
 <span id="annotated-cell-1-27"><span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Wrapper function to be called from Host</span></span>
-<span id="annotated-cell-1-28"><span class="at" style="color: #657422;
+<button class="code-annotation-anchor" data-target-cell="annotated-cell-1" data-target-annotation="4">4</button><span id="annotated-cell-1-28" class="code-annotation-target"><span class="at" style="color: #657422;
 background-color: null;
 font-style: inherit;">extern</span> <span class="st" style="color: #20794D;
 background-color: null;
@@ -327,16 +327,15 @@ font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">float</span> alpha<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">,</span></span>
-<button class="code-annotation-anchor" data-target-cell="annotated-cell-1" data-target-annotation="4">4</button><span id="annotated-cell-1-29" class="code-annotation-target">                      <span class="dt" style="color: #AD0000;
+font-style: inherit;">,</span> <span class="dt" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">float</span> beta<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="annotated-cell-1-30"></span>
-<span id="annotated-cell-1-31">    dim3 block<span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-1-29"></span>
+<span id="annotated-cell-1-30">    dim3 block<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">(</span><span class="dv" style="color: #AD0000;
 background-color: null;
@@ -347,13 +346,13 @@ background-color: null;
 font-style: inherit;">16</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">);</span></span>
-<span id="annotated-cell-1-32">    <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-1-31">    <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Grid calculation: ensures we cover the entire matrix (ceiling division)</span></span>
-<span id="annotated-cell-1-33">    dim3 grid<span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-1-32">    dim3 grid<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">(</span></span>
-<span id="annotated-cell-1-34">        <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-1-33">        <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">(</span>N <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -368,7 +367,7 @@ background-color: null;
 font-style: inherit;">16</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">,</span></span>
-<span id="annotated-cell-1-35">        <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-1-34">        <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">(</span>M <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -381,11 +380,11 @@ background-color: null;
 font-style: inherit;">/</span> <span class="dv" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">16</span></span>
-<span id="annotated-cell-1-36">    <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-1-35">    <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">);</span></span>
-<span id="annotated-cell-1-37"></span>
-<span id="annotated-cell-1-38">    gemm_naive_kernel<span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-1-36"></span>
+<span id="annotated-cell-1-37">    gemm_naive_kernel<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">&lt;&lt;&lt;</span>grid<span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -408,10 +407,10 @@ background-color: null;
 font-style: inherit;">,</span> beta<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">);</span></span>
-<span id="annotated-cell-1-39">    cudaDeviceSynchronize<span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-1-38">    cudaDeviceSynchronize<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">();</span></span>
-<span id="annotated-cell-1-40"><span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-1-39"><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span><div class="code-annotation-gutter-bg"></div><div class="code-annotation-gutter"></div></code></pre></div></div>
 <dl class="code-annotation-container-hidden code-annotation-container-grid">
@@ -429,40 +428,77 @@ font-style: inherit;">}</span></span><div class="code-annotation-gutter-bg"></di
 </dd>
 <dt data-target-cell="annotated-cell-1" data-target-annotation="4">4</dt>
 <dd>
-<span data-code-cell="annotated-cell-1" data-code-lines="29" data-code-annotation="4"><strong>Host Wrapper</strong>: <code>extern "C"</code> prevents C++ name mangling, allowing us to easily call this function from ctypes (Python) or PyTorch extensions later in the project.</span>
+<span data-code-cell="annotated-cell-1" data-code-lines="28" data-code-annotation="4"><strong>Host Wrapper</strong>: <code>extern "C"</code> prevents C++ name mangling, allowing us to easily call this function from ctypes (Python) or PyTorch extensions later in the project.</span>
 </dd>
 </dl>
 </section>
-<section id="arithmetic-intensity" class="level3">
-<h3 class="anchored" data-anchor-id="arithmetic-intensity">Arithmetic Intensity</h3>
-<p>For each output element of C, we load K elements of A and K elements of B in order to compute a dot product. For each pair of elements in the dot product, we multiply them together and then add the result to the running sum. Therefore, for every 2 halves we load from global memory (a total of 4 bytes), we perform 2 floating point operations with those halves. So our arithmetic intensity is 2 FLOPs divided by 4 bytes, or 0.5 FLOP/B.</p>
-<p>Below, we can see the roofline model for our test suite of GPUs, compared to the arithmetic intensity of our first kernel. This kernel will be memory-bound on every GPU. Our first course of action to improve the performance of our kernel should be to rethink our memory access pattern.</p>
+<section id="roofline-model" class="level3">
+<h3 class="anchored" data-anchor-id="roofline-model">Roofline Model</h3>
+<p>For each output element of C, we load K elements of A and K elements of B in order to compute a dot product. For each pair of elements in the dot product, we multiply them together and then add the result to the running sum. Therefore, for every 2 halves we load from global memory (a total of 4 bytes), we perform 2 floating point operations. So our computational intensity is 2 FLOPs divided by 4 bytes, or 0.5 FLOP/B.</p>
+<p>Below, we can see the roofline model for our test suite of GPUs, compared to the computational intensity of our first kernel. This kernel will be memory-bound on every GPU. Our first course of action to improve the performance of our kernel should be to rethink our memory access pattern.</p>
+<p>Due to the hidden test suite, we technically don’t know the FLOPS throughput of our kernel on each GPU. However we have the runtime, so we can look at that as a proxy, and compare the computational intensity of the kernel to the ridge point of each GPU to see how close we are to saturating the memory bandwidth or not. This should be accurate for determining if we are compute or memory bound.</p>
+<table class="table">
+<caption>Benchmark Targets: The Ridge Point represents the arithmetic intensity required to max out the GPU’s compute. Below this number, the kernel is memory bound.</caption>
+<colgroup>
+<col style="width: 20%">
+<col style="width: 20%">
+<col style="width: 20%">
+<col style="width: 20%">
+<col style="width: 20%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;">GPU Model</th>
+<th style="text-align: left;">Memory Bandwidth</th>
+<th style="text-align: left;">Peak FP16 Compute</th>
+<th style="text-align: left;">Ridge Point (FLOP/Byte)</th>
+<th style="text-align: left;">Runtime (ms)</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;"><strong>NVIDIA T4</strong></td>
+<td style="text-align: left;">320 GB/s</td>
+<td style="text-align: left;">65 TFLOPS</td>
+<td style="text-align: left;"><strong>203</strong></td>
+<td style="text-align: left;">8.49</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><strong>NVIDIA A100 (80GB)</strong></td>
+<td style="text-align: left;">2,039 GB/s</td>
+<td style="text-align: left;">312 TFLOPS</td>
+<td style="text-align: left;"><strong>153</strong></td>
+<td style="text-align: left;">1.03</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><strong>NVIDIA H100 (SXM)</strong></td>
+<td style="text-align: left;">3,350 GB/s</td>
+<td style="text-align: left;">989 TFLOPS</td>
+<td style="text-align: left;"><strong>295</strong></td>
+<td style="text-align: left;">0.54</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><strong>NVIDIA H200 (SXM)</strong></td>
+<td style="text-align: left;">4,800 GB/s</td>
+<td style="text-align: left;">989 TFLOPS</td>
+<td style="text-align: left;"><strong>206</strong></td>
+<td style="text-align: left;">0.53</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><strong>NVIDIA B200</strong></td>
+<td style="text-align: left;">8,000 GB/s</td>
+<td style="text-align: left;">2,500 TFLOPS</td>
+<td style="text-align: left;"><strong>312</strong></td>
+<td style="text-align: left;">0.50</td>
+</tr>
+</tbody>
+</table>
 </section>
 </section>
 <section id="tiled-matrix-multiplication" class="level2">
 <h2 class="anchored" data-anchor-id="tiled-matrix-multiplication">2. Tiled Matrix Multiplication</h2>
-<p>To move beyond the naive implementation, we must address the primary bottleneck of GPU computing: <strong>Memory Bandwidth</strong>.</p>
-<p>In a naive implementation, every thread loads its required row of <img src="https://latex.codecogs.com/png.latex?A"> and column of <img src="https://latex.codecogs.com/png.latex?B"> directly from global memory (HBM). This results in massive redundancy. For a tile of size <img src="https://latex.codecogs.com/png.latex?T%20%5Ctimes%20T">, the naive approach loads data <img src="https://latex.codecogs.com/png.latex?2T%5E2%20%5Ctimes%20N"> times.</p>
-<p><strong>Tiling</strong> exploits the data reuse inherent in matrix multiplication. By loading a small block of data into <strong>Shared Memory</strong> (a user-managed cache that is roughly 100x faster than HBM), threads in a block can repeatedly access the same data without hitting global memory.</p>
-<section id="algorithm" class="level3">
-<h3 class="anchored" data-anchor-id="algorithm">Algorithm</h3>
-<p>The strategy is to divide the output matrix <img src="https://latex.codecogs.com/png.latex?C"> into tiles. A standard Thread Block (e.g., <img src="https://latex.codecogs.com/png.latex?16%20%5Ctimes%2016">) is responsible for computing one tile of <img src="https://latex.codecogs.com/png.latex?C">.</p>
-<ol type="1">
-<li><strong>Collaborative Load:</strong> All threads in the block work together to load a sub-tile of <img src="https://latex.codecogs.com/png.latex?A"> and a sub-tile of <img src="https://latex.codecogs.com/png.latex?B"> from global memory into shared memory.</li>
-<li><strong>Synchronization:</strong> A barrier (<code>__syncthreads()</code>) ensures all data is loaded.</li>
-<li><strong>Compute:</strong> Threads calculate the partial dot product using the data in shared memory.</li>
-<li><strong>Iterate:</strong> The block moves to the next “phase” (the next chunk of the K-dimension) and repeats.</li>
-</ol>
-</section>
-</section>
-<section id="visualizing-the-data-flow" class="level2">
-<h2 class="anchored" data-anchor-id="visualizing-the-data-flow">Visualizing the Data Flow</h2>
-<section id="memory-hierarchy" class="level3">
-<h3 class="anchored" data-anchor-id="memory-hierarchy">Memory Hierarchy</h3>
-<p>Before looking at the code, it is crucial to map the physical movement of data. We are explicitly moving data from the massive but slow High Bandwidth Memory (HBM) into the tiny but fast Shared Memory (SRAM).</p>
 
 
-</section>
 </section>
 
  ]]></description>
