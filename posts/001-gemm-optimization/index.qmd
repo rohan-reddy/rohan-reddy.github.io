@@ -61,9 +61,9 @@ Hover over the numbered annotations for explanations of key parts.
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
 
-__global__ void gemm_naive_kernel(const half* A, const half* B, half* C, 
+__global__ void gemm_naive_kernel(const half* A, const half* B, half* C, // <1>
                                   int M, int N, int K, 
-                                  float alpha, float beta) { // <1>
+                                  float alpha, float beta) { 
     
     // Calculate global row and column indices for this thread
     int col = blockIdx.x * blockDim.x + threadIdx.x; // <2>
@@ -75,7 +75,7 @@ __global__ void gemm_naive_kernel(const half* A, const half* B, half* C,
         
         // The K-loop: Perform the dot product
         for (int i = 0; i < K; i++) {
-            val += __half2float(A[row * K + i]) * __half2float(B[i * N + col]); // <3>
+            val += __half2float(A[row * K + i]) * __half2float(B[i * N + col]); // <2>
         }
         
         // Write result back to C
@@ -85,7 +85,7 @@ __global__ void gemm_naive_kernel(const half* A, const half* B, half* C,
 }
 
 // Wrapper function to be called from Host
-extern "C" void solve(const half* A, const half* B, half* C, int M, int N, int K, float alpha, float beta) { // <4>
+extern "C" void solve(const half* A, const half* B, half* C, int M, int N, int K, float alpha, float beta) { 
 
     dim3 block(16, 16);
     // Grid calculation: ensures we cover the entire matrix (ceiling division)
@@ -99,9 +99,7 @@ extern "C" void solve(const half* A, const half* B, half* C, int M, int N, int K
 }
 ```
 1. **half vs. float**: We use `half` precision (FP16) for storage but perform accumulation in `float` (FP32). This is so that we can move data faster from global memory (only 2 bytes per element rather than 4), but during the accumulation computation, we don't lose small updates due to the smaller mantissa in FP16. (For example, imagine adding 0.01 to a running sum of 1000: if our mantissa is small enough, we may significantly alter or even omit some updates.)
-2. **2D Indexing**: Standard mapping of a 2D thread block to matrix coordinates. `blockIdx` tells us which tile we are in; `threadIdx` tells us the pixel within that tile.
-3. **The Bottleneck**: This line is the performance killer. For every single pixel in C, we are fetching the entire row of A and column of B from Global Memory (DRAM). 
-4. **Host Wrapper**: `extern "C"` prevents C++ name mangling, allowing us to easily call this function from ctypes (Python) or PyTorch extensions later in the project.
+2. **The Bottleneck**: This line is the performance killer. For every single pixel in C, we are fetching the entire row of A and column of B from Global Memory (DRAM). 
 
 ### Arithmetic Intensity
 For each output element of C, we load K elements of A and K elements of B in order to compute a dot product. For each pair of elements in the dot product, we multiply them together and then add the result to the running sum. Therefore, for every 2 halves we load from global memory (a total of 4 bytes), we perform 2 floating point operations. So our computational intensity is 2 FLOPs divided by 4 bytes, or 0.5 FLOP/B.
@@ -216,7 +214,7 @@ extern "C" void solve(const half* A, const half* B, half* C, int M, int N, int K
     cudaDeviceSynchronize();
 }
 ```
-1. **Shared memory**: We declare our block shared memory. One can also dynamically pass the total size of block shared memory to the kernel at runtime if desired. In our case, we have a predetermined tile width. Note that we need to be cognizant of the total shared memory available on an SM. Our oldest GPU, the T4, has 64 KB of shared memory per SM. Here, we have two arrays of 16 x 16 floats each, so 512 total floats, so 4 KB. We're well within the limits.
+1. **Shared memory**: We declare our block shared memory. One can also dynamically pass the total size of block shared memory to the kernel at runtime if desired. In our case, we have a predetermined tile width. Note that we need to be cognizant of the total shared memory available on an SM. Our oldest GPU, the T4, has 64 KB of shared memory per SM. Here, we have two arrays of 16 x 16 floats each, so 512 total floats, so 4 KB. We're well within the limits. I went ahead and converted the halves to floats at this stage since we're so far within shared memory limits, but to save on half of the shared memory allocation, we could declare the shared memory arrays as type half and convert them at compute time.
 2. **Coarsening**: We set COARSE_FACTOR to 2, so each thread is going to load in 2 elements each from A and B, and compute 2 output elements in C. We are loading in two horizontal tiles at a time per block, so we need to apply our coarsening factor to our column computation.
 3. **Loop unrolling**: ```#pragma unroll``` is a directive that asks the compiler to try to unroll the loop fully, especially if the total number of iterations is known at compile time. To unroll a loop means to duplicate the code in the loop body rather than perform a condition check and a jump back to the start of the loop body. This allows us to avoid the execution speed cost of checking the loop condition, with the tradeoff of increasing code size. From here on out, we will typically unroll any loop with a constant number of iterations.
 4. **Boundary checks**: Our tiles are a fixed size. So if our matrix dimensions are not all multiples of 16, we will have some tiles that aren't fully contained within the input matrices and try to access out-of-bound indices. We can simply set these values to 0 in shared memory so that they accumulate to 0 and don't impact the result.
@@ -630,7 +628,7 @@ extern "C" void solve(const half* A, const half* B, half* C, int M, int N, int K
 3. **Accumulator Grid**: Accumulator is a 2 x 2 grid because each warp is assigned a 32 x 32 output tile but can only compute 16 x 16 at a time. 
 4. ```__pipeline_memcpy_async```: Instructs the Async Copy Engine to copy data from global memory to shared memory. As this is an asynchronous operation, the command returns immediately and allows us to continue with other instructions while the memory loads. We issue a vectorized load for 8 halves worth of data at once (```sizeof(int4)```).
 5. ```__pipeline_commit```: Marks the end of a batch of copy commands. Effectively, ```memcpy_async``` adds the copy instruction to our shopping cart, and ```commit``` places the order. 
-6. ```__pipeline_wait_prior```: Pauses the thread execution until the specified number of committed batches are incomplete. Since we pass in 0, we are pausing thread execution until all asynchronous loads that were issued are complete (in our case, only a single load). In any case, after this line, we have to issue ```syncthreads``` because each thread is collaboratively loading a piece of A and B that every thread will need for compute. 
+6. ```__pipeline_wait_prior```: Since we pass in 0, we are pausing thread execution until all asynchronous loads that were issued are complete (in our case, only a single load). In any case, after this line, we have to issue ```syncthreads``` because each thread is collaboratively loading a piece of A and B that every thread will need for compute. 
 7. **Writing to the Double Buffer**: We load into the half of the double buffer that we're not using this loop iterationn.
 8. **Reading from the Double Buffer**: We pull data for the WMMA operation from the half of the double buffer that is ready.
 9. Notice the location of this command in the main loop compared to in the prologue. We only had to issue it immediately after placing the copy command in the prologue because we needed to load the very first tile for compute. In the main loop, we don't need to hold up threads on the copy completion until we have finished all compute for this iteration.
@@ -894,8 +892,6 @@ __global__ void gemm_swizzled_kernel(const half* A, const half* B, half* C, int 
    
     // ------- EPILOGUE: Store C ----------
     // We need a Shared Memory buffer for the floats from the Accumulators.
-    // Size: 64 * 64 floats = 16 KB. 
-    // This fits easily alongside sA/sB on modern GPUs (total ~36KB used).
     __shared__ float sC[BLOCK_M * BLOCK_N];
 
     // 1. Store Accumulators (Registers) -> Shared Memory (Float)
@@ -1271,8 +1267,6 @@ __global__ void gemm_swizzled_all(const half* A, const half* B, half* C, int M, 
    
     // ------- EPILOGUE: Store C ----------
     // We need a Shared Memory buffer for the floats from the Accumulators.
-    // Size: 64 * 64 floats = 16 KB. 
-    // This fits easily alongside sA/sB on modern GPUs (total ~36KB used).
     __shared__ float sC[BLOCK_M * BLOCK_N];
 
     // 1. Store Accumulators (Registers) -> Shared Memory (Float)
@@ -1390,7 +1384,7 @@ The final graph of kernel versus runtime on each GPU is below.
 ```{python}
 #| label: fig-gpu-optimization
 #| fig-cap: "GPU Runtime by Kernel Optimization Step"
-#| cap-location: bottom
+#| fig-cap-location: bottom
 #| echo: false
 #| warning: false
 #| message: false
