@@ -1,9 +1,9 @@
 ---
 title: "Note 001: GEMM Optimization"
 description: "Iterating on General Matrix Multiplication in CUDA for optimal performance on NVIDIA GPUs"
-date: "2026-02-02"
+date: "2026-02-06"
 categories: [CUDA, GEMM, Linear Algebra]
-image: ./images/post_icon.jpg # You can add a preview image later
+image: images/fig-gpu-optimization-output-1.png # You can add a preview image later
 draft: false 
 format:
   html:
