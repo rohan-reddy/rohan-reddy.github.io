@@ -627,7 +627,7 @@ extern "C" void solve(const half* A, const half* B, half* C, int M, int N, int K
 ```
 1. **Warp Grid**: As we have 128 threads per block, we have 4 warps per block, which we arrange in a 2x2 grid. Each block computes a 64 x 64 output tile, so we need to assign each warp a 32 x 32 output tile.
 2. **Data Loading**: We treat the A and B tiles, 64 x 16 and 16 x 64 respectively, as linear arrays of 128 8-element vectors. So each thread is responsible for loading 8 halves to shared memory.
-3. **Accumulator Grid**: Accumulator is a 2x2 grid because each warp is assigned a 32x32 output tile but can only compute 16x16 at a time. 
+3. **Accumulator Grid**: Accumulator is a 2 x 2 grid because each warp is assigned a 32 x 32 output tile but can only compute 16 x 16 at a time. 
 4. ```__pipeline_memcpy_async```: Instructs the Async Copy Engine to copy data from global memory to shared memory. As this is an asynchronous operation, the command returns immediately and allows us to continue with other instructions while the memory loads. We issue a vectorized load for 8 halves worth of data at once (```sizeof(int4)```).
 5. ```__pipeline_commit```: Marks the end of a batch of copy commands. Effectively, ```memcpy_async``` adds the copy instruction to our shopping cart, and ```commit``` places the order. 
 6. ```__pipeline_wait_prior```: Pauses the thread execution until the specified number of committed batches are incomplete. Since we pass in 0, we are pausing thread execution until all asynchronous loads that were issued are complete (in our case, only a single load). In any case, after this line, we have to issue ```syncthreads``` because each thread is collaboratively loading a piece of A and B that every thread will need for compute. 
@@ -638,7 +638,18 @@ extern "C" void solve(const half* A, const half* B, half* C, int M, int N, int K
 
 
 ### Arithmetic Intensity
+
+We will examine a single iteration of the main loop. We load in a 64 x 16 chunk of A and a 16 x 64 chunk of B from global memory, for a total of 2,048 halves, which is 4,096 bytes. Our output tile is 64 x 64, and on each loop iteration, we accumulate a dot product of two 16-element vectors to each pixel of the output tile. This dot product consists of 16 multiplications and 16 additions, so 32 FLOPs per pixel. In total then, we perform 64 * 64 * 32 = 131,072 FLOPs per loop iteration. Dividing this out by our global memory load of 4,096 bytes, we get an arithmetic intensity of 32 FLOPs/B. This is due to our increased tile size, not due to our double buffer which mainly helps with hiding memory latency. So we should theoretically have two different improvements that speed up our runtime: reusing more data due to the larger tile size, and latency hiding due to the double buffer. Thankfully, the runtime confirms this, as we can see considerable speedup on all GPUs. 
+
 ### Benchmarks
+
+| GPU Model | Memory Bandwidth | Peak FP16 Compute | Ridge Point (FLOP/Byte) | Runtime (ms) |
+| :--- | :--- | :--- | :--- | :--- |
+| **NVIDIA T4** | 320 GB/s | 65 TFLOPS | 203 | 1.04 |
+| **NVIDIA A100 (80GB)** | 2,039 GB/s | 312 TFLOPS | 153 | 0.12 |
+| **NVIDIA H100 (SXM)** | 3,350 GB/s | 989 TFLOPS | 295 | 0.05 |
+| **NVIDIA H200 (SXM)** | 4,800 GB/s | 989 TFLOPS | 206 | 0.05 |
+| **NVIDIA B200** | 8,000 GB/s | 2,500 TFLOPS | 312 | 0.05 |
 
 ## 5. Swizzling
 
