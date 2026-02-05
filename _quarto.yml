@@ -19,8 +19,11 @@ website:
 
     right:
       - about.qmd
+      - icon: linkedin
+        href: https://www.linkedin.com/in/rohan-reddy-bba12a111/
       - icon: github
         href: https://github.com/rohan-reddy
+      
   
   page-footer: 
     left: "© 2026 Rohan Reddy"
