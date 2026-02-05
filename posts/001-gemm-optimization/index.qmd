@@ -1464,7 +1464,7 @@ plt.tight_layout()
 plt.show()
 ```
 
-LeetGPU has a leaderboard for each GPU for the GEMM problem, as well as a list of public solutions ordered by runtime. The leaderboard considers both private and public solutions (it is a user preference whether your solutions are public or not - I left mine as public as I greatly benefited from reading others solutions to understand their approaches). On most of the GPUs, I am not in the top 3 on the leaderboard, but on all of them my solution is in the top 5. In particular, for the Blackwell B200, my solution sits at 1st place by a whopping 1 microsecond over the next best solution. Not bad! 
+LeetGPU has a leaderboard for each GPU for the GEMM problem, as well as a list of public solutions ordered by runtime. The leaderboard considers both private and public solutions (it is a user preference whether your solutions are public or not - I left mine as public as I greatly benefited from reading others solutions to understand their approaches). At the time of writing, on most of the GPUs, I am not in the top 3 on the leaderboard, but on all of them my solution is in the top 5. In particular, for the Blackwell B200, my solution sits at 1st place by a whopping 0.1 microsecond over the next best solution. Not bad! 
 
 !["ShaderShinobi" is my pseudonym. I debated whether to omit the other leaderboard usernames for anonymity, but those usernames already look pretty pseudonymous. Also, I'm hoping if either of those authors see this post, they'll contact me to nerd out about GPUs.](images/05_leaderboard.png){width=90%}
 
