@@ -4276,7 +4276,7 @@ font-style: inherit;">}</span></span><div class="code-annotation-gutter-bg"></di
 </dd>
 <dt data-target-cell="annotated-cell-4" data-target-annotation="3">3</dt>
 <dd>
-<span data-code-cell="annotated-cell-4" data-code-lines="49" data-code-annotation="3"><strong>Accumulator Grid</strong>: Accumulator is a 2x2 grid because each warp is assigned a 32x32 output tile but can only compute 16x16 at a time.</span>
+<span data-code-cell="annotated-cell-4" data-code-lines="49" data-code-annotation="3"><strong>Accumulator Grid</strong>: Accumulator is a 2 x 2 grid because each warp is assigned a 32 x 32 output tile but can only compute 16 x 16 at a time.</span>
 </dd>
 <dt data-target-cell="annotated-cell-4" data-target-annotation="4">4</dt>
 <dd>
@@ -4310,9 +4310,65 @@ font-style: inherit;">}</span></span><div class="code-annotation-gutter-bg"></di
 </section>
 <section id="arithmetic-intensity-3" class="level3">
 <h3 class="anchored" data-anchor-id="arithmetic-intensity-3">Arithmetic Intensity</h3>
+<p>We will examine a single iteration of the main loop. We load in a 64 x 16 chunk of A and a 16 x 64 chunk of B from global memory, for a total of 2,048 halves, which is 4,096 bytes. Our output tile is 64 x 64, and on each loop iteration, we accumulate a dot product of two 16-element vectors to each pixel of the output tile. This dot product consists of 16 multiplications and 16 additions, so 32 FLOPs per pixel. In total then, we perform 64 * 64 * 32 = 131,072 FLOPs per loop iteration. Dividing this out by our global memory load of 4,096 bytes, we get an arithmetic intensity of 32 FLOPs/B. This is due to our increased tile size, not due to our double buffer which mainly helps with hiding memory latency. So we should theoretically have two different improvements that speed up our runtime: reusing more data due to the larger tile size, and latency hiding due to the double buffer. Thankfully, the runtime confirms this, as we can see considerable speedup on all GPUs.</p>
 </section>
 <section id="benchmarks-3" class="level3">
 <h3 class="anchored" data-anchor-id="benchmarks-3">Benchmarks</h3>
+<table class="table">
+<colgroup>
+<col style="width: 20%">
+<col style="width: 20%">
+<col style="width: 20%">
+<col style="width: 20%">
+<col style="width: 20%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;">GPU Model</th>
+<th style="text-align: left;">Memory Bandwidth</th>
+<th style="text-align: left;">Peak FP16 Compute</th>
+<th style="text-align: left;">Ridge Point (FLOP/Byte)</th>
+<th style="text-align: left;">Runtime (ms)</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;"><strong>NVIDIA T4</strong></td>
+<td style="text-align: left;">320 GB/s</td>
+<td style="text-align: left;">65 TFLOPS</td>
+<td style="text-align: left;">203</td>
+<td style="text-align: left;">1.04</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><strong>NVIDIA A100 (80GB)</strong></td>
+<td style="text-align: left;">2,039 GB/s</td>
+<td style="text-align: left;">312 TFLOPS</td>
+<td style="text-align: left;">153</td>
+<td style="text-align: left;">0.12</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><strong>NVIDIA H100 (SXM)</strong></td>
+<td style="text-align: left;">3,350 GB/s</td>
+<td style="text-align: left;">989 TFLOPS</td>
+<td style="text-align: left;">295</td>
+<td style="text-align: left;">0.05</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><strong>NVIDIA H200 (SXM)</strong></td>
+<td style="text-align: left;">4,800 GB/s</td>
+<td style="text-align: left;">989 TFLOPS</td>
+<td style="text-align: left;">206</td>
+<td style="text-align: left;">0.05</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><strong>NVIDIA B200</strong></td>
+<td style="text-align: left;">8,000 GB/s</td>
+<td style="text-align: left;">2,500 TFLOPS</td>
+<td style="text-align: left;">312</td>
+<td style="text-align: left;">0.05</td>
+</tr>
+</tbody>
+</table>
 </section>
 </section>
 <section id="swizzling" class="level2">
