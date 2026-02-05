@@ -72,7 +72,7 @@ font-style: inherit;">#include </span><span class="im" style="color: #00769E;
 background-color: null;
 font-style: inherit;">&lt;cuda_runtime.h&gt;</span></span>
 <span id="annotated-cell-1-3"></span>
-<span id="annotated-cell-1-4">__global__ <span class="dt" style="color: #AD0000;
+<button class="code-annotation-anchor" data-target-cell="annotated-cell-1" data-target-annotation="1">1</button><span id="annotated-cell-1-4" class="code-annotation-target">__global__ <span class="dt" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">void</span> gemm_naive_kernel<span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -92,7 +92,7 @@ font-style: inherit;">,</span> half<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">*</span> C<span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">,</span> </span>
+font-style: inherit;">,</span></span>
 <span id="annotated-cell-1-5">                                  <span class="dt" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">int</span> M<span class="op" style="color: #5E5E5E;
@@ -106,7 +106,7 @@ background-color: null;
 font-style: inherit;">int</span> K<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">,</span> </span>
-<button class="code-annotation-anchor" data-target-cell="annotated-cell-1" data-target-annotation="1">1</button><span id="annotated-cell-1-6" class="code-annotation-target">                                  <span class="dt" style="color: #AD0000;
+<span id="annotated-cell-1-6">                                  <span class="dt" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">float</span> alpha<span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -116,7 +116,7 @@ font-style: inherit;">float</span> beta<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">{</span></span>
+font-style: inherit;">{</span> </span>
 <span id="annotated-cell-1-7">    </span>
 <span id="annotated-cell-1-8">    <span class="co" style="color: #5E5E5E;
 background-color: null;
@@ -210,7 +210,7 @@ background-color: null;
 font-style: inherit;">++)</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<button class="code-annotation-anchor" data-target-cell="annotated-cell-1" data-target-annotation="3">3</button><span id="annotated-cell-1-18" class="code-annotation-target">            val <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-1-18">            val <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">+=</span> __half2float<span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -286,7 +286,7 @@ font-style: inherit;">}</span></span>
 <span id="annotated-cell-1-27"><span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Wrapper function to be called from Host</span></span>
-<button class="code-annotation-anchor" data-target-cell="annotated-cell-1" data-target-annotation="4">4</button><span id="annotated-cell-1-28" class="code-annotation-target"><span class="at" style="color: #657422;
+<span id="annotated-cell-1-28"><span class="at" style="color: #657422;
 background-color: null;
 font-style: inherit;">extern</span> <span class="st" style="color: #20794D;
 background-color: null;
@@ -332,7 +332,7 @@ font-style: inherit;">float</span> beta<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
-font-style: inherit;">{</span></span>
+font-style: inherit;">{</span> </span>
 <span id="annotated-cell-1-29"></span>
 <span id="annotated-cell-1-30">    dim3 block<span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -415,19 +415,11 @@ font-style: inherit;">}</span></span><div class="code-annotation-gutter-bg"></di
 <dl class="code-annotation-container-hidden code-annotation-container-grid">
 <dt data-target-cell="annotated-cell-1" data-target-annotation="1">1</dt>
 <dd>
-<span data-code-cell="annotated-cell-1" data-code-lines="6" data-code-annotation="1"><strong>half vs.&nbsp;float</strong>: We use <code>half</code> precision (FP16) for storage but perform accumulation in <code>float</code> (FP32). This is so that we can move data faster from global memory (only 2 bytes per element rather than 4), but during the accumulation computation, we don’t lose small updates due to the smaller mantissa in FP16. (For example, imagine adding 0.01 to a running sum of 1000: if our mantissa is small enough, we may significantly alter or even omit some updates.)</span>
+<span data-code-cell="annotated-cell-1" data-code-lines="4" data-code-annotation="1"><strong>half vs.&nbsp;float</strong>: We use <code>half</code> precision (FP16) for storage but perform accumulation in <code>float</code> (FP32). This is so that we can move data faster from global memory (only 2 bytes per element rather than 4), but during the accumulation computation, we don’t lose small updates due to the smaller mantissa in FP16. (For example, imagine adding 0.01 to a running sum of 1000: if our mantissa is small enough, we may significantly alter or even omit some updates.)</span>
 </dd>
 <dt data-target-cell="annotated-cell-1" data-target-annotation="2">2</dt>
 <dd>
-<span data-code-cell="annotated-cell-1" data-code-lines="9" data-code-annotation="2"><strong>2D Indexing</strong>: Standard mapping of a 2D thread block to matrix coordinates. <code>blockIdx</code> tells us which tile we are in; <code>threadIdx</code> tells us the pixel within that tile.</span>
-</dd>
-<dt data-target-cell="annotated-cell-1" data-target-annotation="3">3</dt>
-<dd>
-<span data-code-cell="annotated-cell-1" data-code-lines="18" data-code-annotation="3"><strong>The Bottleneck</strong>: This line is the performance killer. For every single pixel in C, we are fetching the entire row of A and column of B from Global Memory (DRAM).</span>
-</dd>
-<dt data-target-cell="annotated-cell-1" data-target-annotation="4">4</dt>
-<dd>
-<span data-code-cell="annotated-cell-1" data-code-lines="28" data-code-annotation="4"><strong>Host Wrapper</strong>: <code>extern "C"</code> prevents C++ name mangling, allowing us to easily call this function from ctypes (Python) or PyTorch extensions later in the project.</span>
+<span data-code-cell="annotated-cell-1" data-code-lines="9,18" data-code-annotation="2"><strong>The Bottleneck</strong>: This line is the performance killer. For every single pixel in C, we are fetching the entire row of A and column of B from Global Memory (DRAM).</span>
 </dd>
 </dl>
 </section>
@@ -5881,13 +5873,7 @@ font-style: inherit;">// ------- EPILOGUE: Store C ----------</span></span>
 <span id="annotated-cell-5-204">    <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// We need a Shared Memory buffer for the floats from the Accumulators.</span></span>
-<span id="annotated-cell-5-205">    <span class="co" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">// Size: 64 * 64 floats = 16 KB. </span></span>
-<span id="annotated-cell-5-206">    <span class="co" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">// This fits easily alongside sA/sB on modern GPUs (total ~36KB used).</span></span>
-<span id="annotated-cell-5-207">    __shared__ <span class="dt" style="color: #AD0000;
+<span id="annotated-cell-5-205">    __shared__ <span class="dt" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">float</span> sC<span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -5896,17 +5882,17 @@ background-color: null;
 font-style: inherit;">*</span> BLOCK_N<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">];</span></span>
-<span id="annotated-cell-5-208"></span>
-<span id="annotated-cell-5-209">    <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-5-206"></span>
+<span id="annotated-cell-5-207">    <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// 1. Store Accumulators (Registers) -&gt; Shared Memory (Float)</span></span>
-<span id="annotated-cell-5-210">    <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-5-208">    <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Each warp holds a 32x32 tile distributed across 2x2 fragments (16x16 each).</span></span>
-<span id="annotated-cell-5-211">    <span class="pp" style="color: #AD0000;
+<span id="annotated-cell-5-209">    <span class="pp" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">#pragma unroll</span></span>
-<span id="annotated-cell-5-212">    <span class="cf" style="color: #003B4F;
+<span id="annotated-cell-5-210">    <span class="cf" style="color: #003B4F;
 background-color: null;
 font-weight: bold;
 font-style: inherit;">for</span> <span class="op" style="color: #5E5E5E;
@@ -5930,10 +5916,10 @@ background-color: null;
 font-style: inherit;">++)</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="annotated-cell-5-213">        <span class="pp" style="color: #AD0000;
+<span id="annotated-cell-5-211">        <span class="pp" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">#pragma unroll</span></span>
-<span id="annotated-cell-5-214">        <span class="cf" style="color: #003B4F;
+<span id="annotated-cell-5-212">        <span class="cf" style="color: #003B4F;
 background-color: null;
 font-weight: bold;
 font-style: inherit;">for</span> <span class="op" style="color: #5E5E5E;
@@ -5957,10 +5943,10 @@ background-color: null;
 font-style: inherit;">++)</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="annotated-cell-5-215">            <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-5-213">            <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Calculate where this 16x16 fragment belongs in the 64x64 block</span></span>
-<span id="annotated-cell-5-216">            <span class="dt" style="color: #AD0000;
+<span id="annotated-cell-5-214">            <span class="dt" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">int</span> row_offset <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -5975,7 +5961,7 @@ background-color: null;
 font-style: inherit;">16</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">);</span></span>
-<span id="annotated-cell-5-217">            <span class="dt" style="color: #AD0000;
+<span id="annotated-cell-5-215">            <span class="dt" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">int</span> col_offset <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -5990,8 +5976,8 @@ background-color: null;
 font-style: inherit;">16</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">);</span></span>
-<span id="annotated-cell-5-218">            </span>
-<span id="annotated-cell-5-219">            <span class="dt" style="color: #AD0000;
+<span id="annotated-cell-5-216">            </span>
+<span id="annotated-cell-5-217">            <span class="dt" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">float</span><span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -6006,11 +5992,11 @@ background-color: null;
 font-style: inherit;">+</span> col_offset<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">;</span></span>
-<span id="annotated-cell-5-220"></span>
-<span id="annotated-cell-5-221">            <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-5-218"></span>
+<span id="annotated-cell-5-219">            <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Store fragment to shared memory (Stride is BLOCK_N)</span></span>
-<span id="annotated-cell-5-222">            wmma<span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-5-220">            wmma<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">::</span>store_matrix_sync<span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -6029,40 +6015,40 @@ background-color: null;
 font-style: inherit;">::</span>mem_row_major<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">);</span></span>
-<span id="annotated-cell-5-223">        <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-5-221">        <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="annotated-cell-5-224">    <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-5-222">    <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="annotated-cell-5-225"></span>
-<span id="annotated-cell-5-226">    <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-5-223"></span>
+<span id="annotated-cell-5-224">    <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Wait for all warps to finish writing to sC</span></span>
-<span id="annotated-cell-5-227">    __syncthreads<span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-5-225">    __syncthreads<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">();</span></span>
-<span id="annotated-cell-5-228"></span>
-<span id="annotated-cell-5-229">    <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-5-226"></span>
+<span id="annotated-cell-5-227">    <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// 2. Write Shared Memory (Float) -&gt; Global Memory (Half)</span></span>
-<span id="annotated-cell-5-230">    <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-5-228">    <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Total Elements: 64 * 64 = 4096.</span></span>
-<span id="annotated-cell-5-231">    <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-5-229">    <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Threads: 128.</span></span>
-<span id="annotated-cell-5-232">    <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-5-230">    <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Elements per thread: 32.</span></span>
-<span id="annotated-cell-5-233">    <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-5-231">    <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Vectors per thread: 32 / 8 = 4 vectors (int4).</span></span>
-<span id="annotated-cell-5-234"></span>
-<span id="annotated-cell-5-235">    <span class="pp" style="color: #AD0000;
+<span id="annotated-cell-5-232"></span>
+<span id="annotated-cell-5-233">    <span class="pp" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">#pragma unroll</span></span>
-<span id="annotated-cell-5-236">    <span class="cf" style="color: #003B4F;
+<span id="annotated-cell-5-234">    <span class="cf" style="color: #003B4F;
 background-color: null;
 font-weight: bold;
 font-style: inherit;">for</span> <span class="op" style="color: #5E5E5E;
@@ -6086,13 +6072,13 @@ background-color: null;
 font-style: inherit;">++)</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="annotated-cell-5-237">        <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-5-235">        <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Calculate the linear index for this vector of 8 elements</span></span>
-<span id="annotated-cell-5-238">        <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-5-236">        <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Stride by THREAD_COUNT to ensure coalescing (Thread 0 takes 0..7, Thread 1 takes 8..15)</span></span>
-<span id="annotated-cell-5-239">        <span class="dt" style="color: #AD0000;
+<span id="annotated-cell-5-237">        <span class="dt" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">int</span> vec_idx <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -6103,8 +6089,8 @@ background-color: null;
 font-style: inherit;">*</span> THREAD_COUNT<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">;</span> </span>
-<span id="annotated-cell-5-240">        </span>
-<span id="annotated-cell-5-241">        <span class="dt" style="color: #AD0000;
+<span id="annotated-cell-5-238">        </span>
+<span id="annotated-cell-5-239">        <span class="dt" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">int</span> base_idx <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -6117,7 +6103,7 @@ background-color: null;
 font-style: inherit;">;</span> <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// The starting element index</span></span>
-<span id="annotated-cell-5-242">        <span class="dt" style="color: #AD0000;
+<span id="annotated-cell-5-240">        <span class="dt" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">int</span> row <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -6126,7 +6112,7 @@ background-color: null;
 font-style: inherit;">/</span> BLOCK_N<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">;</span></span>
-<span id="annotated-cell-5-243">        <span class="dt" style="color: #AD0000;
+<span id="annotated-cell-5-241">        <span class="dt" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">int</span> col <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -6135,8 +6121,8 @@ background-color: null;
 font-style: inherit;">%</span> BLOCK_N<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">;</span></span>
-<span id="annotated-cell-5-244"></span>
-<span id="annotated-cell-5-245">        <span class="dt" style="color: #AD0000;
+<span id="annotated-cell-5-242"></span>
+<span id="annotated-cell-5-243">        <span class="dt" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">int</span> global_row <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -6145,7 +6131,7 @@ background-color: null;
 font-style: inherit;">+</span> row<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">;</span></span>
-<span id="annotated-cell-5-246">        <span class="dt" style="color: #AD0000;
+<span id="annotated-cell-5-244">        <span class="dt" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">int</span> global_col <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -6154,14 +6140,14 @@ background-color: null;
 font-style: inherit;">+</span> col<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">;</span></span>
-<span id="annotated-cell-5-247"></span>
-<span id="annotated-cell-5-248">        <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-5-245"></span>
+<span id="annotated-cell-5-246">        <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Boundary Check (Safe for arbitrary M/N)</span></span>
-<span id="annotated-cell-5-249">        <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-5-247">        <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// We check if the whole vector of 8 fits</span></span>
-<span id="annotated-cell-5-250">        <span class="cf" style="color: #003B4F;
+<span id="annotated-cell-5-248">        <span class="cf" style="color: #003B4F;
 background-color: null;
 font-weight: bold;
 font-style: inherit;">if</span> <span class="op" style="color: #5E5E5E;
@@ -6181,8 +6167,8 @@ background-color: null;
 font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="annotated-cell-5-251">            </span>
-<span id="annotated-cell-5-252">            half out_buffer<span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-5-249">            </span>
+<span id="annotated-cell-5-250">            half out_buffer<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">[</span><span class="dv" style="color: #AD0000;
 background-color: null;
@@ -6191,21 +6177,21 @@ background-color: null;
 font-style: inherit;">];</span> <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Register buffer for formatting</span></span>
-<span id="annotated-cell-5-253"></span>
-<span id="annotated-cell-5-254">            <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-5-251"></span>
+<span id="annotated-cell-5-252">            <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// OPTIONAL: Beta Handling (Load old C)</span></span>
-<span id="annotated-cell-5-255">            <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-5-253">            <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// If beta is non-zero, we must load the existing values from Global Memory first</span></span>
-<span id="annotated-cell-5-256">            half old_c<span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-5-254">            half old_c<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">[</span><span class="dv" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">8</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">];</span> </span>
-<span id="annotated-cell-5-257">            <span class="dt" style="color: #AD0000;
+<span id="annotated-cell-5-255">            <span class="dt" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">bool</span> use_beta <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -6220,8 +6206,8 @@ background-color: null;
 font-style: inherit;">f</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">);</span></span>
-<span id="annotated-cell-5-258"></span>
-<span id="annotated-cell-5-259">            <span class="cf" style="color: #003B4F;
+<span id="annotated-cell-5-256"></span>
+<span id="annotated-cell-5-257">            <span class="cf" style="color: #003B4F;
 background-color: null;
 font-weight: bold;
 font-style: inherit;">if</span> <span class="op" style="color: #5E5E5E;
@@ -6231,10 +6217,10 @@ background-color: null;
 font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="annotated-cell-5-260">                 <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-5-258">                 <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Vectorized Load of old C</span></span>
-<span id="annotated-cell-5-261">                <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-5-259">                <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">*(</span>int4<span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -6253,17 +6239,17 @@ background-color: null;
 font-style: inherit;">+</span> global_col<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">];</span></span>
-<span id="annotated-cell-5-262">            <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-5-260">            <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="annotated-cell-5-263"></span>
-<span id="annotated-cell-5-264">            <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-5-261"></span>
+<span id="annotated-cell-5-262">            <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Compute scaling and conversion</span></span>
-<span id="annotated-cell-5-265">            <span class="pp" style="color: #AD0000;
+<span id="annotated-cell-5-263">            <span class="pp" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">#pragma unroll</span></span>
-<span id="annotated-cell-5-266">            <span class="cf" style="color: #003B4F;
+<span id="annotated-cell-5-264">            <span class="cf" style="color: #003B4F;
 background-color: null;
 font-weight: bold;
 font-style: inherit;">for</span> <span class="op" style="color: #5E5E5E;
@@ -6287,10 +6273,10 @@ background-color: null;
 font-style: inherit;">++)</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="annotated-cell-5-267">                <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-5-265">                <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Read float from Shared</span></span>
-<span id="annotated-cell-5-268">                <span class="dt" style="color: #AD0000;
+<span id="annotated-cell-5-266">                <span class="dt" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">float</span> val <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -6301,20 +6287,20 @@ background-color: null;
 font-style: inherit;">+</span> x<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">];</span> </span>
-<span id="annotated-cell-5-269">                </span>
-<span id="annotated-cell-5-270">                <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-5-267">                </span>
+<span id="annotated-cell-5-268">                <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Apply Alpha</span></span>
-<span id="annotated-cell-5-271">                val <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-5-269">                val <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">*=</span> alpha<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">;</span></span>
-<span id="annotated-cell-5-272"></span>
-<span id="annotated-cell-5-273">                <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-5-270"></span>
+<span id="annotated-cell-5-271">                <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Apply Beta</span></span>
-<span id="annotated-cell-5-274">                <span class="cf" style="color: #003B4F;
+<span id="annotated-cell-5-272">                <span class="cf" style="color: #003B4F;
 background-color: null;
 font-weight: bold;
 font-style: inherit;">if</span> <span class="op" style="color: #5E5E5E;
@@ -6324,7 +6310,7 @@ background-color: null;
 font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="annotated-cell-5-275">                    val <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-5-273">                    val <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">+=</span> beta <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -6335,14 +6321,14 @@ background-color: null;
 font-style: inherit;">[</span>x<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">]);</span></span>
-<span id="annotated-cell-5-276">                <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-5-274">                <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="annotated-cell-5-277"></span>
-<span id="annotated-cell-5-278">                <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-5-275"></span>
+<span id="annotated-cell-5-276">                <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Convert to Half</span></span>
-<span id="annotated-cell-5-279">                out_buffer<span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-5-277">                out_buffer<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">[</span>x<span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -6353,14 +6339,14 @@ background-color: null;
 font-style: inherit;">(</span>val<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">);</span></span>
-<span id="annotated-cell-5-280">            <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-5-278">            <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="annotated-cell-5-281"></span>
-<span id="annotated-cell-5-282">            <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-5-279"></span>
+<span id="annotated-cell-5-280">            <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Vectorized Store to Global Memory</span></span>
-<span id="annotated-cell-5-283">            <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-5-281">            <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">*(</span>int4<span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -6381,8 +6367,8 @@ background-color: null;
 font-style: inherit;">*)</span>out_buffer<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">;</span></span>
-<span id="annotated-cell-5-284"></span>
-<span id="annotated-cell-5-285">        <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-5-282"></span>
+<span id="annotated-cell-5-283">        <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span> <span class="cf" style="color: #003B4F;
 background-color: null;
@@ -6399,10 +6385,10 @@ background-color: null;
 font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="annotated-cell-5-286">            <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-5-284">            <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Edge Case: Partial vector write (at the edge of the matrix)</span></span>
-<span id="annotated-cell-5-287">            <span class="cf" style="color: #003B4F;
+<span id="annotated-cell-5-285">            <span class="cf" style="color: #003B4F;
 background-color: null;
 font-weight: bold;
 font-style: inherit;">for</span> <span class="op" style="color: #5E5E5E;
@@ -6426,7 +6412,7 @@ background-color: null;
 font-style: inherit;">++)</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="annotated-cell-5-288">                <span class="cf" style="color: #003B4F;
+<span id="annotated-cell-5-286">                <span class="cf" style="color: #003B4F;
 background-color: null;
 font-weight: bold;
 font-style: inherit;">if</span> <span class="op" style="color: #5E5E5E;
@@ -6440,7 +6426,7 @@ background-color: null;
 font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="annotated-cell-5-289">                    <span class="dt" style="color: #AD0000;
+<span id="annotated-cell-5-287">                    <span class="dt" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">float</span> val <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -6453,7 +6439,7 @@ background-color: null;
 font-style: inherit;">+</span> x<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">];</span></span>
-<span id="annotated-cell-5-290">                    <span class="cf" style="color: #003B4F;
+<span id="annotated-cell-5-288">                    <span class="cf" style="color: #003B4F;
 background-color: null;
 font-weight: bold;
 font-style: inherit;">if</span> <span class="op" style="color: #5E5E5E;
@@ -6469,7 +6455,7 @@ background-color: null;
 font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="annotated-cell-5-291">                        val <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-5-289">                        val <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">+=</span> beta <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -6486,10 +6472,10 @@ background-color: null;
 font-style: inherit;">+</span> x<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">]);</span></span>
-<span id="annotated-cell-5-292">                    <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-5-290">                    <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="annotated-cell-5-293">                    C<span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-5-291">                    C<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">[</span>global_row <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -6506,27 +6492,27 @@ background-color: null;
 font-style: inherit;">(</span>val<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">);</span></span>
-<span id="annotated-cell-5-294">                <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-5-292">                <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="annotated-cell-5-295">            <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-5-293">            <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="annotated-cell-5-296">        <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-5-294">        <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="annotated-cell-5-297">    <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-5-295">    <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span> </span>
-<span id="annotated-cell-5-298"><span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-5-296"><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="annotated-cell-5-299"></span>
-<span id="annotated-cell-5-300"></span>
-<span id="annotated-cell-5-301"><span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-5-297"></span>
+<span id="annotated-cell-5-298"></span>
+<span id="annotated-cell-5-299"><span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Same as before</span></span>
-<span id="annotated-cell-5-302">__global__ <span class="dt" style="color: #AD0000;
+<span id="annotated-cell-5-300">__global__ <span class="dt" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">void</span> gemm_tiled_kernel<span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -6573,8 +6559,8 @@ background-color: null;
 font-style: inherit;">...</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="annotated-cell-5-303"></span>
-<span id="annotated-cell-5-304"><span class="at" style="color: #657422;
+<span id="annotated-cell-5-301"></span>
+<span id="annotated-cell-5-302"><span class="at" style="color: #657422;
 background-color: null;
 font-style: inherit;">extern</span> <span class="st" style="color: #20794D;
 background-color: null;
@@ -6621,7 +6607,7 @@ background-color: null;
 font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<button class="code-annotation-anchor" data-target-cell="annotated-cell-5" data-target-annotation="8">8</button><span id="annotated-cell-5-305" class="code-annotation-target">    <span class="cf" style="color: #003B4F;
+<button class="code-annotation-anchor" data-target-cell="annotated-cell-5" data-target-annotation="8">8</button><span id="annotated-cell-5-303" class="code-annotation-target">    <span class="cf" style="color: #003B4F;
 background-color: null;
 font-weight: bold;
 font-style: inherit;">if</span> <span class="op" style="color: #5E5E5E;
@@ -6659,12 +6645,12 @@ background-color: null;
 font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="annotated-cell-5-306">        dim3 blockDim<span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-5-304">        dim3 blockDim<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">(</span>THREAD_COUNT<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">);</span></span>
-<span id="annotated-cell-5-307">        dim3 gridDim<span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-5-305">        dim3 gridDim<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">(</span>N <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -6675,7 +6661,7 @@ background-color: null;
 font-style: inherit;">/</span> BLOCK_M<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">);</span></span>
-<span id="annotated-cell-5-308">        gemm_swizzled_kernel<span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-5-306">        gemm_swizzled_kernel<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">&lt;&lt;&lt;</span>gridDim<span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -6698,7 +6684,7 @@ background-color: null;
 font-style: inherit;">,</span> beta<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">);</span></span>
-<span id="annotated-cell-5-309">    <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-5-307">    <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span> <span class="cf" style="color: #003B4F;
 background-color: null;
@@ -6706,17 +6692,17 @@ font-weight: bold;
 font-style: inherit;">else</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="annotated-cell-5-310">        dim3 blockDim<span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-5-308">        dim3 blockDim<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">(</span>TILE_WIDTH<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">,</span> TILE_WIDTH<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">);</span></span>
-<span id="annotated-cell-5-311">        dim3 gridDim<span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-5-309">        dim3 gridDim<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">(</span></span>
-<span id="annotated-cell-5-312">            <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-5-310">            <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">(</span>N <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -6731,7 +6717,7 @@ background-color: null;
 font-style: inherit;">/</span> TILE_WIDTH<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">,</span></span>
-<span id="annotated-cell-5-313">            <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-5-311">            <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">(</span>M <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -6744,11 +6730,11 @@ background-color: null;
 font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">/</span> TILE_WIDTH</span>
-<span id="annotated-cell-5-314">        <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-5-312">        <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">);</span></span>
-<span id="annotated-cell-5-315"></span>
-<span id="annotated-cell-5-316">        gemm_tiled_kernel<span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-5-313"></span>
+<span id="annotated-cell-5-314">        gemm_tiled_kernel<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">&lt;&lt;&lt;</span>gridDim<span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -6771,10 +6757,10 @@ background-color: null;
 font-style: inherit;">,</span> beta<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">);</span></span>
-<span id="annotated-cell-5-317">    <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-5-315">    <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="annotated-cell-5-318"><span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-5-316"><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span><div class="code-annotation-gutter-bg"></div><div class="code-annotation-gutter"></div></code></pre></div></div>
 <dl class="code-annotation-container-hidden code-annotation-container-grid">
@@ -6808,7 +6794,7 @@ font-style: inherit;">}</span></span><div class="code-annotation-gutter-bg"></di
 </dd>
 <dt data-target-cell="annotated-cell-5" data-target-annotation="8">8</dt>
 <dd>
-<span data-code-cell="annotated-cell-5" data-code-lines="305" data-code-annotation="8"><strong>Dimension Check</strong>: Since we doubled BLOCK_K we need to change this dimension check too. It may seem disappointing that we are now handling even fewer matrices with our optimized kernel. Don’t worry, we’ll fix this in the next kernel!</span>
+<span data-code-cell="annotated-cell-5" data-code-lines="303" data-code-annotation="8"><strong>Dimension Check</strong>: Since we doubled BLOCK_K we need to change this dimension check too. It may seem disappointing that we are now handling even fewer matrices with our optimized kernel. Don’t worry, we’ll fix this in the next kernel!</span>
 </dd>
 </dl>
 </section>
@@ -8660,13 +8646,7 @@ font-style: inherit;">// ------- EPILOGUE: Store C ----------</span></span>
 <span id="annotated-cell-6-231">    <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// We need a Shared Memory buffer for the floats from the Accumulators.</span></span>
-<span id="annotated-cell-6-232">    <span class="co" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">// Size: 64 * 64 floats = 16 KB. </span></span>
-<span id="annotated-cell-6-233">    <span class="co" style="color: #5E5E5E;
-background-color: null;
-font-style: inherit;">// This fits easily alongside sA/sB on modern GPUs (total ~36KB used).</span></span>
-<span id="annotated-cell-6-234">    __shared__ <span class="dt" style="color: #AD0000;
+<span id="annotated-cell-6-232">    __shared__ <span class="dt" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">float</span> sC<span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -8675,17 +8655,17 @@ background-color: null;
 font-style: inherit;">*</span> BLOCK_N<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">];</span></span>
-<span id="annotated-cell-6-235"></span>
-<span id="annotated-cell-6-236">    <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-6-233"></span>
+<span id="annotated-cell-6-234">    <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// 1. Store Accumulators (Registers) -&gt; Shared Memory (Float)</span></span>
-<span id="annotated-cell-6-237">    <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-6-235">    <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Each warp holds a 32x32 tile distributed across 2x2 fragments (16x16 each).</span></span>
-<span id="annotated-cell-6-238">    <span class="pp" style="color: #AD0000;
+<span id="annotated-cell-6-236">    <span class="pp" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">#pragma unroll</span></span>
-<span id="annotated-cell-6-239">    <span class="cf" style="color: #003B4F;
+<span id="annotated-cell-6-237">    <span class="cf" style="color: #003B4F;
 background-color: null;
 font-weight: bold;
 font-style: inherit;">for</span> <span class="op" style="color: #5E5E5E;
@@ -8709,10 +8689,10 @@ background-color: null;
 font-style: inherit;">++)</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="annotated-cell-6-240">        <span class="pp" style="color: #AD0000;
+<span id="annotated-cell-6-238">        <span class="pp" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">#pragma unroll</span></span>
-<span id="annotated-cell-6-241">        <span class="cf" style="color: #003B4F;
+<span id="annotated-cell-6-239">        <span class="cf" style="color: #003B4F;
 background-color: null;
 font-weight: bold;
 font-style: inherit;">for</span> <span class="op" style="color: #5E5E5E;
@@ -8736,10 +8716,10 @@ background-color: null;
 font-style: inherit;">++)</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="annotated-cell-6-242">            <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-6-240">            <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Calculate where this 16x16 fragment belongs in the 64x64 block</span></span>
-<span id="annotated-cell-6-243">            <span class="dt" style="color: #AD0000;
+<span id="annotated-cell-6-241">            <span class="dt" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">int</span> row_offset <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -8754,7 +8734,7 @@ background-color: null;
 font-style: inherit;">16</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">);</span></span>
-<span id="annotated-cell-6-244">            <span class="dt" style="color: #AD0000;
+<span id="annotated-cell-6-242">            <span class="dt" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">int</span> col_offset <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -8769,8 +8749,8 @@ background-color: null;
 font-style: inherit;">16</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">);</span></span>
-<span id="annotated-cell-6-245">            </span>
-<span id="annotated-cell-6-246">            <span class="dt" style="color: #AD0000;
+<span id="annotated-cell-6-243">            </span>
+<span id="annotated-cell-6-244">            <span class="dt" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">float</span><span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -8785,11 +8765,11 @@ background-color: null;
 font-style: inherit;">+</span> col_offset<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">;</span></span>
-<span id="annotated-cell-6-247"></span>
-<span id="annotated-cell-6-248">            <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-6-245"></span>
+<span id="annotated-cell-6-246">            <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Store fragment to shared memory (Stride is BLOCK_N)</span></span>
-<span id="annotated-cell-6-249">            wmma<span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-6-247">            wmma<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">::</span>store_matrix_sync<span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -8808,40 +8788,40 @@ background-color: null;
 font-style: inherit;">::</span>mem_row_major<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">);</span></span>
-<span id="annotated-cell-6-250">        <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-6-248">        <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="annotated-cell-6-251">    <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-6-249">    <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="annotated-cell-6-252"></span>
-<span id="annotated-cell-6-253">    <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-6-250"></span>
+<span id="annotated-cell-6-251">    <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Wait for all warps to finish writing to sC</span></span>
-<span id="annotated-cell-6-254">    __syncthreads<span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-6-252">    __syncthreads<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">();</span></span>
-<span id="annotated-cell-6-255"></span>
-<span id="annotated-cell-6-256">    <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-6-253"></span>
+<span id="annotated-cell-6-254">    <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// 2. Write Shared Memory (Float) -&gt; Global Memory (Half)</span></span>
-<span id="annotated-cell-6-257">    <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-6-255">    <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Total Elements: 64 * 64 = 4096.</span></span>
-<span id="annotated-cell-6-258">    <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-6-256">    <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Threads: 128.</span></span>
-<span id="annotated-cell-6-259">    <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-6-257">    <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Elements per thread: 32.</span></span>
-<span id="annotated-cell-6-260">    <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-6-258">    <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Vectors per thread: 32 / 8 = 4 vectors (int4).</span></span>
-<span id="annotated-cell-6-261"></span>
-<span id="annotated-cell-6-262">    <span class="pp" style="color: #AD0000;
+<span id="annotated-cell-6-259"></span>
+<span id="annotated-cell-6-260">    <span class="pp" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">#pragma unroll</span></span>
-<span id="annotated-cell-6-263">    <span class="cf" style="color: #003B4F;
+<span id="annotated-cell-6-261">    <span class="cf" style="color: #003B4F;
 background-color: null;
 font-weight: bold;
 font-style: inherit;">for</span> <span class="op" style="color: #5E5E5E;
@@ -8865,13 +8845,13 @@ background-color: null;
 font-style: inherit;">++)</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="annotated-cell-6-264">        <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-6-262">        <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Calculate the linear index for this vector of 8 elements</span></span>
-<span id="annotated-cell-6-265">        <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-6-263">        <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Stride by THREAD_COUNT to ensure coalescing (Thread 0 takes 0..7, Thread 1 takes 8..15)</span></span>
-<span id="annotated-cell-6-266">        <span class="dt" style="color: #AD0000;
+<span id="annotated-cell-6-264">        <span class="dt" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">int</span> vec_idx <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -8882,8 +8862,8 @@ background-color: null;
 font-style: inherit;">*</span> THREAD_COUNT<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">;</span> </span>
-<span id="annotated-cell-6-267">        </span>
-<span id="annotated-cell-6-268">        <span class="dt" style="color: #AD0000;
+<span id="annotated-cell-6-265">        </span>
+<span id="annotated-cell-6-266">        <span class="dt" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">int</span> base_idx <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -8896,7 +8876,7 @@ background-color: null;
 font-style: inherit;">;</span> <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// The starting element index</span></span>
-<span id="annotated-cell-6-269">        <span class="dt" style="color: #AD0000;
+<span id="annotated-cell-6-267">        <span class="dt" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">int</span> row <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -8905,7 +8885,7 @@ background-color: null;
 font-style: inherit;">/</span> BLOCK_N<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">;</span></span>
-<span id="annotated-cell-6-270">        <span class="dt" style="color: #AD0000;
+<span id="annotated-cell-6-268">        <span class="dt" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">int</span> col <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -8914,8 +8894,8 @@ background-color: null;
 font-style: inherit;">%</span> BLOCK_N<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">;</span></span>
-<span id="annotated-cell-6-271"></span>
-<span id="annotated-cell-6-272">        <span class="dt" style="color: #AD0000;
+<span id="annotated-cell-6-269"></span>
+<span id="annotated-cell-6-270">        <span class="dt" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">int</span> global_row <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -8924,7 +8904,7 @@ background-color: null;
 font-style: inherit;">+</span> row<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">;</span></span>
-<span id="annotated-cell-6-273">        <span class="dt" style="color: #AD0000;
+<span id="annotated-cell-6-271">        <span class="dt" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">int</span> global_col <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -8933,14 +8913,14 @@ background-color: null;
 font-style: inherit;">+</span> col<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">;</span></span>
-<span id="annotated-cell-6-274"></span>
-<span id="annotated-cell-6-275">        <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-6-272"></span>
+<span id="annotated-cell-6-273">        <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Boundary Check (Safe for arbitrary M/N)</span></span>
-<span id="annotated-cell-6-276">        <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-6-274">        <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// We check if the whole vector of 8 fits</span></span>
-<span id="annotated-cell-6-277">        <span class="cf" style="color: #003B4F;
+<span id="annotated-cell-6-275">        <span class="cf" style="color: #003B4F;
 background-color: null;
 font-weight: bold;
 font-style: inherit;">if</span> <span class="op" style="color: #5E5E5E;
@@ -8960,8 +8940,8 @@ background-color: null;
 font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="annotated-cell-6-278">            </span>
-<span id="annotated-cell-6-279">            half out_buffer<span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-6-276">            </span>
+<span id="annotated-cell-6-277">            half out_buffer<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">[</span><span class="dv" style="color: #AD0000;
 background-color: null;
@@ -8970,21 +8950,21 @@ background-color: null;
 font-style: inherit;">];</span> <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Register buffer for formatting</span></span>
-<span id="annotated-cell-6-280"></span>
-<span id="annotated-cell-6-281">            <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-6-278"></span>
+<span id="annotated-cell-6-279">            <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// OPTIONAL: Beta Handling (Load old C)</span></span>
-<span id="annotated-cell-6-282">            <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-6-280">            <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// If beta is non-zero, we must load the existing values from Global Memory first</span></span>
-<span id="annotated-cell-6-283">            half old_c<span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-6-281">            half old_c<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">[</span><span class="dv" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">8</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">];</span> </span>
-<span id="annotated-cell-6-284">            <span class="dt" style="color: #AD0000;
+<span id="annotated-cell-6-282">            <span class="dt" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">bool</span> use_beta <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -8999,8 +8979,8 @@ background-color: null;
 font-style: inherit;">f</span><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">);</span></span>
-<span id="annotated-cell-6-285"></span>
-<span id="annotated-cell-6-286">            <span class="cf" style="color: #003B4F;
+<span id="annotated-cell-6-283"></span>
+<span id="annotated-cell-6-284">            <span class="cf" style="color: #003B4F;
 background-color: null;
 font-weight: bold;
 font-style: inherit;">if</span> <span class="op" style="color: #5E5E5E;
@@ -9010,10 +8990,10 @@ background-color: null;
 font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="annotated-cell-6-287">                 <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-6-285">                 <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Vectorized Load of old C</span></span>
-<span id="annotated-cell-6-288">                <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-6-286">                <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">*(</span>int4<span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -9032,17 +9012,17 @@ background-color: null;
 font-style: inherit;">+</span> global_col<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">];</span></span>
-<span id="annotated-cell-6-289">            <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-6-287">            <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="annotated-cell-6-290"></span>
-<span id="annotated-cell-6-291">            <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-6-288"></span>
+<span id="annotated-cell-6-289">            <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Compute scaling and conversion</span></span>
-<span id="annotated-cell-6-292">            <span class="pp" style="color: #AD0000;
+<span id="annotated-cell-6-290">            <span class="pp" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">#pragma unroll</span></span>
-<span id="annotated-cell-6-293">            <span class="cf" style="color: #003B4F;
+<span id="annotated-cell-6-291">            <span class="cf" style="color: #003B4F;
 background-color: null;
 font-weight: bold;
 font-style: inherit;">for</span> <span class="op" style="color: #5E5E5E;
@@ -9066,10 +9046,10 @@ background-color: null;
 font-style: inherit;">++)</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="annotated-cell-6-294">                <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-6-292">                <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Read float from Shared</span></span>
-<span id="annotated-cell-6-295">                <span class="dt" style="color: #AD0000;
+<span id="annotated-cell-6-293">                <span class="dt" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">float</span> val <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -9080,20 +9060,20 @@ background-color: null;
 font-style: inherit;">+</span> x<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">];</span> </span>
-<span id="annotated-cell-6-296">                </span>
-<span id="annotated-cell-6-297">                <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-6-294">                </span>
+<span id="annotated-cell-6-295">                <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Apply Alpha</span></span>
-<span id="annotated-cell-6-298">                val <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-6-296">                val <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">*=</span> alpha<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">;</span></span>
-<span id="annotated-cell-6-299"></span>
-<span id="annotated-cell-6-300">                <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-6-297"></span>
+<span id="annotated-cell-6-298">                <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Apply Beta</span></span>
-<span id="annotated-cell-6-301">                <span class="cf" style="color: #003B4F;
+<span id="annotated-cell-6-299">                <span class="cf" style="color: #003B4F;
 background-color: null;
 font-weight: bold;
 font-style: inherit;">if</span> <span class="op" style="color: #5E5E5E;
@@ -9103,7 +9083,7 @@ background-color: null;
 font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="annotated-cell-6-302">                    val <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-6-300">                    val <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">+=</span> beta <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -9114,14 +9094,14 @@ background-color: null;
 font-style: inherit;">[</span>x<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">]);</span></span>
-<span id="annotated-cell-6-303">                <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-6-301">                <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="annotated-cell-6-304"></span>
-<span id="annotated-cell-6-305">                <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-6-302"></span>
+<span id="annotated-cell-6-303">                <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Convert to Half</span></span>
-<span id="annotated-cell-6-306">                out_buffer<span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-6-304">                out_buffer<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">[</span>x<span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -9132,14 +9112,14 @@ background-color: null;
 font-style: inherit;">(</span>val<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">);</span></span>
-<span id="annotated-cell-6-307">            <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-6-305">            <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="annotated-cell-6-308"></span>
-<span id="annotated-cell-6-309">            <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-6-306"></span>
+<span id="annotated-cell-6-307">            <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Vectorized Store to Global Memory</span></span>
-<span id="annotated-cell-6-310">            <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-6-308">            <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">*(</span>int4<span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -9160,8 +9140,8 @@ background-color: null;
 font-style: inherit;">*)</span>out_buffer<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">;</span></span>
-<span id="annotated-cell-6-311"></span>
-<button class="code-annotation-anchor" data-target-cell="annotated-cell-6" data-target-annotation="3">3</button><span id="annotated-cell-6-312" class="code-annotation-target">        <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-6-309"></span>
+<button class="code-annotation-anchor" data-target-cell="annotated-cell-6" data-target-annotation="3">3</button><span id="annotated-cell-6-310" class="code-annotation-target">        <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span> <span class="cf" style="color: #003B4F;
 background-color: null;
@@ -9178,10 +9158,10 @@ background-color: null;
 font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="annotated-cell-6-313">            <span class="co" style="color: #5E5E5E;
+<span id="annotated-cell-6-311">            <span class="co" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">// Edge Case: Partial vector write (at the edge of the matrix)</span></span>
-<span id="annotated-cell-6-314">            <span class="cf" style="color: #003B4F;
+<span id="annotated-cell-6-312">            <span class="cf" style="color: #003B4F;
 background-color: null;
 font-weight: bold;
 font-style: inherit;">for</span> <span class="op" style="color: #5E5E5E;
@@ -9205,7 +9185,7 @@ background-color: null;
 font-style: inherit;">++)</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="annotated-cell-6-315">                <span class="cf" style="color: #003B4F;
+<span id="annotated-cell-6-313">                <span class="cf" style="color: #003B4F;
 background-color: null;
 font-weight: bold;
 font-style: inherit;">if</span> <span class="op" style="color: #5E5E5E;
@@ -9219,7 +9199,7 @@ background-color: null;
 font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="annotated-cell-6-316">                    <span class="dt" style="color: #AD0000;
+<span id="annotated-cell-6-314">                    <span class="dt" style="color: #AD0000;
 background-color: null;
 font-style: inherit;">float</span> val <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -9232,7 +9212,7 @@ background-color: null;
 font-style: inherit;">+</span> x<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">];</span></span>
-<span id="annotated-cell-6-317">                    <span class="cf" style="color: #003B4F;
+<span id="annotated-cell-6-315">                    <span class="cf" style="color: #003B4F;
 background-color: null;
 font-weight: bold;
 font-style: inherit;">if</span> <span class="op" style="color: #5E5E5E;
@@ -9248,7 +9228,7 @@ background-color: null;
 font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="annotated-cell-6-318">                        val <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-6-316">                        val <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">+=</span> beta <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -9265,10 +9245,10 @@ background-color: null;
 font-style: inherit;">+</span> x<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">]);</span></span>
-<span id="annotated-cell-6-319">                    <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-6-317">                    <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="annotated-cell-6-320">                    C<span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-6-318">                    C<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">[</span>global_row <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -9285,24 +9265,24 @@ background-color: null;
 font-style: inherit;">(</span>val<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">);</span></span>
-<span id="annotated-cell-6-321">                <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-6-319">                <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="annotated-cell-6-322">            <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-6-320">            <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="annotated-cell-6-323">        <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-6-321">        <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="annotated-cell-6-324">    <span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-6-322">    <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span> </span>
-<span id="annotated-cell-6-325"><span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-6-323"><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span>
-<span id="annotated-cell-6-326"></span>
-<span id="annotated-cell-6-327"></span>
-<span id="annotated-cell-6-328"><span class="at" style="color: #657422;
+<span id="annotated-cell-6-324"></span>
+<span id="annotated-cell-6-325"></span>
+<span id="annotated-cell-6-326"><span class="at" style="color: #657422;
 background-color: null;
 font-style: inherit;">extern</span> <span class="st" style="color: #20794D;
 background-color: null;
@@ -9349,12 +9329,12 @@ background-color: null;
 font-style: inherit;">)</span> <span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">{</span></span>
-<span id="annotated-cell-6-329">    dim3 blockDim<span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-6-327">    dim3 blockDim<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">(</span>THREAD_COUNT<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">);</span></span>
-<span id="annotated-cell-6-330">    dim3 gridDim<span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-6-328">    dim3 gridDim<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">((</span>N <span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -9383,7 +9363,7 @@ background-color: null;
 font-style: inherit;">/</span> BLOCK_M<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">);</span></span>
-<span id="annotated-cell-6-331">    gemm_swizzled_all<span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-6-329">    gemm_swizzled_all<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">&lt;&lt;&lt;</span>gridDim<span class="op" style="color: #5E5E5E;
 background-color: null;
@@ -9406,7 +9386,7 @@ background-color: null;
 font-style: inherit;">,</span> beta<span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">);</span></span>
-<span id="annotated-cell-6-332"><span class="op" style="color: #5E5E5E;
+<span id="annotated-cell-6-330"><span class="op" style="color: #5E5E5E;
 background-color: null;
 font-style: inherit;">}</span></span><div class="code-annotation-gutter-bg"></div><div class="code-annotation-gutter"></div></code></pre></div></div>
 <dl class="code-annotation-container-hidden code-annotation-container-grid">
@@ -9420,7 +9400,7 @@ font-style: inherit;">}</span></span><div class="code-annotation-gutter-bg"></di
 </dd>
 <dt data-target-cell="annotated-cell-6" data-target-annotation="3">3</dt>
 <dd>
-<span data-code-cell="annotated-cell-6" data-code-lines="312" data-code-annotation="3"><strong>Boundary check for writing</strong>: We have the same boundary checks as usual to not write out zeroes or junk to global memory in the epilogue.</span>
+<span data-code-cell="annotated-cell-6" data-code-lines="310" data-code-annotation="3"><strong>Boundary check for writing</strong>: We have the same boundary checks as usual to not write out zeroes or junk to global memory in the epilogue.</span>
 </dd>
 </dl>
 </section>
@@ -9436,9 +9416,9 @@ font-style: inherit;">}</span></span><div class="code-annotation-gutter-bg"></di
 <section id="final-performance-analysis" class="level2 page-columns page-full">
 <h2 class="anchored" data-anchor-id="final-performance-analysis">Final Performance Analysis</h2>
 <p>The final graph of kernel versus runtime on each GPU is below.</p>
-<div id="cell-fig-gpu-optimization" class="cell" data-message="false" data-execution_count="1" data-cap-location="undefined">
+<div id="cell-fig-gpu-optimization" class="cell" data-message="false" data-execution_count="1">
 <div class="cell-output cell-output-display">
-<div id="fig-gpu-optimization" class="quarto-float quarto-figure quarto-figure-center anchored" data-cap-location="undefined" data-fig-align="center">
+<div id="fig-gpu-optimization" class="quarto-float quarto-figure quarto-figure-center anchored" data-cap-location="bottom" data-fig-align="center">
 <figure class="quarto-float quarto-float-fig figure">
 <div aria-describedby="fig-gpu-optimization-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
 <img src="https://rohan-reddy.github.io/posts/001-gemm-optimization/index_files/figure-html/fig-gpu-optimization-output-1.png" class="quarto-figure quarto-figure-center figure-img" width="655" height="562">
