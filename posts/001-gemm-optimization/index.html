@@ -6,7 +6,7 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
-<meta name="dcterms.date" content="2026-02-02">
+<meta name="dcterms.date" content="2026-02-06">
 <meta name="description" content="Iterating on General Matrix Multiplication in CUDA for optimal performance on NVIDIA GPUs">
 
 <title>Note 001: GEMM Optimization – Rohan Reddy / Notes</title>
@@ -207,7 +207,7 @@ window.Quarto = {
       <div>
       <div class="quarto-title-meta-heading">Published</div>
       <div class="quarto-title-meta-contents">
-        <p class="date">February 2, 2026</p>
+        <p class="date">February 6, 2026</p>
       </div>
     </div>
     
@@ -542,7 +542,7 @@ C = \alpha \cdot (A \times B) + \beta \cdot C
 <dl class="code-annotation-container-hidden code-annotation-container-grid">
 <dt data-target-cell="annotated-cell-2" data-target-annotation="1">1</dt>
 <dd>
-<span data-code-cell="annotated-cell-2" data-code-lines="9" data-code-annotation="1"><strong>Shared memory</strong>: We declare our block shared memory. One can also dynamically pass the total size of block shared memory to the kernel at runtime if desired. In our case, we have a predetermined tile width. Note that we need to be cognizant of the total shared memory available on an SM. Our oldest GPU, the T4, has 64 KB of shared memory per SM. Here, we have two arrays of 16 x 16 floats each, so 512 total floats, so 4 KB. We’re well within the limits.</span>
+<span data-code-cell="annotated-cell-2" data-code-lines="9" data-code-annotation="1"><strong>Shared memory</strong>: We declare our block shared memory. One can also dynamically pass the total size of block shared memory to the kernel at runtime if desired. In our case, we have a predetermined tile width. Note that we need to be cognizant of the total shared memory available on an SM. Our oldest GPU, the T4, has 64 KB of shared memory per SM. Here, we have two arrays of 16 x 16 floats each, so 512 total floats, so 4 KB. We’re well within the limits. I went ahead and converted the halves to floats at this stage since we’re so far within shared memory limits, but to save on half of the shared memory allocation, we could declare the shared memory arrays as type half and convert them at compute time.</span>
 </dd>
 <dt data-target-cell="annotated-cell-2" data-target-annotation="2">2</dt>
 <dd>
@@ -1111,7 +1111,7 @@ C = \alpha \cdot (A \times B) + \beta \cdot C
 </dd>
 <dt data-target-cell="annotated-cell-4" data-target-annotation="6">6</dt>
 <dd>
-<span data-code-cell="annotated-cell-4" data-code-lines="78" data-code-annotation="6"><code>__pipeline_wait_prior</code>: Pauses the thread execution until the specified number of committed batches are incomplete. Since we pass in 0, we are pausing thread execution until all asynchronous loads that were issued are complete (in our case, only a single load). In any case, after this line, we have to issue <code>syncthreads</code> because each thread is collaboratively loading a piece of A and B that every thread will need for compute.</span>
+<span data-code-cell="annotated-cell-4" data-code-lines="78" data-code-annotation="6"><code>__pipeline_wait_prior</code>: Since we pass in 0, we are pausing thread execution until all asynchronous loads that were issued are complete (in our case, only a single load). In any case, after this line, we have to issue <code>syncthreads</code> because each thread is collaboratively loading a piece of A and B that every thread will need for compute.</span>
 </dd>
 <dt data-target-cell="annotated-cell-4" data-target-annotation="7">7</dt>
 <dd>
@@ -2007,7 +2007,7 @@ C = \alpha \cdot (A \times B) + \beta \cdot C
 <p>The final graph of kernel versus runtime on each GPU is below.</p>
 <div id="cell-fig-gpu-optimization" class="cell" data-message="false" data-execution_count="1">
 <div class="cell-output cell-output-display">
-<div id="fig-gpu-optimization" class="quarto-float quarto-figure quarto-figure-center anchored" data-cap-location="bottom" data-fig-align="center">
+<div id="fig-gpu-optimization" class="quarto-float quarto-figure quarto-figure-center anchored" data-fig-align="center" data-cap-location="bottom">
 <figure class="quarto-float quarto-float-fig figure">
 <div aria-describedby="fig-gpu-optimization-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
 <img src="index_files/figure-html/fig-gpu-optimization-output-1.png" class="quarto-figure quarto-figure-center figure-img" width="655" height="562">
