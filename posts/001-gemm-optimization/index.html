@@ -57,7 +57,27 @@ div.sourceCode
 @media screen {
 pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
 }
-</style>
+/* CSS for citations */
+div.csl-bib-body { }
+div.csl-entry {
+  clear: both;
+  margin-bottom: 0em;
+}
+.hanging-indent div.csl-entry {
+  margin-left:2em;
+  text-indent:-2em;
+}
+div.csl-left-margin {
+  min-width:2em;
+  float:left;
+}
+div.csl-right-inline {
+  margin-left:2em;
+  padding-left:1em;
+}
+div.csl-indent {
+  margin-left: 2em;
+}</style>
 
 
 <script src="../../site_libs/quarto-nav/quarto-nav.js"></script>
@@ -267,7 +287,6 @@ window.Quarto = {
   </ul></li>
   <li><a href="#final-performance-analysis" id="toc-final-performance-analysis" class="nav-link" data-scroll-target="#final-performance-analysis">Final Performance Analysis</a></li>
   <li><a href="#further-optimizations" id="toc-further-optimizations" class="nav-link" data-scroll-target="#further-optimizations">Further Optimizations</a></li>
-  <li><a href="#additional-reading" id="toc-additional-reading" class="nav-link" data-scroll-target="#additional-reading">Additional Reading</a></li>
   </ul>
 </nav>
 </nav>
@@ -282,7 +301,7 @@ window.Quarto = {
 
 
 
-<section id="introduction" class="level2">
+<section id="introduction" class="level2 page-columns page-full">
 <h2 class="anchored" data-anchor-id="introduction">Introduction</h2>
 <p>General Matrix Multiply, or GEMM, is a linear algebra operation that comprises the majority of computing done by modern deep learning models. In this note, I will explain how we can iteratively optimize GEMM implementations in CUDA until we have almost saturated the capability of modern NVIDIA GPUs.</p>
 <section id="mathematical-definition" class="level3">
@@ -309,15 +328,19 @@ C = \alpha \cdot (A \times B) + \beta \cdot C
 </ol>
 <p>Since GEMM dominates the runtime, even a small percentage improvement in kernel efficiency can realize massive savings in training and inference costs at scale.</p>
 </section>
-<section id="problem-setup" class="level3">
+<section id="problem-setup" class="level3 page-columns page-full">
 <h3 class="anchored" data-anchor-id="problem-setup">Problem setup</h3>
-<p>As I iterate on GEMM kernels, I will test them on the General Matrix Multiplication test suite and infrastructure on LeetGPU.com. As per the problem setup there, I will only be using native capabilities of the GPUs, so no libraries like CuTe or cuBLAS. The test suite is hidden, but the known constraints are that each of the matrix dimensions <span class="math inline">\(M\)</span>, <span class="math inline">\(N\)</span>, and <span class="math inline">\(K\)</span> are between 16 and 4096. So the input matrices range from very small (a few hundred elements) to fairly large (16 million elements). The platform tells us the runtime of the kernel on a particular large test case that is unknown to us. The input matrices A and B are given as type half (half-precision floating point number). Lower than usual precision floats are common in AI workloads as they take up less space and allow for higher throughput. For improved accuracy, the computation of the GEMM output will be done using full-precision floats, but the final storage will also be as a half-precision float.</p>
-<p>For each kernel, I will explain the algorithm, how it interacts with the GPU architecture and memory hierarchy, and show the full code in CUDA C++. Finally, I will discuss the arithmetic intensity of the kernel and benchmark its performance on the following NVIDIA GPUs: Tesla T4 (2017), Ampere A100-80GB (2020), Hopper H100 (2022), Hopper H200 (2023), and Blackwell B200 (2024).</p>
+<p>As I iterate on GEMM kernels, I will test them on the General Matrix Multiplication test suite and infrastructure on LeetGPU <span class="citation" data-cites="leetgpu">(<a href="#ref-leetgpu" role="doc-biblioref"><span>“LeetGPU: Competitive GPU Programming”</span> 2026</a>)</span>. As per the problem setup there, I will only be using native capabilities of the GPUs, so no libraries like CuTe or cuBLAS. The test suite is hidden, but the known constraints are that each of the matrix dimensions <span class="math inline">\(M\)</span>, <span class="math inline">\(N\)</span>, and <span class="math inline">\(K\)</span> are between 16 and 4096. So the input matrices range from very small (a few hundred elements) to fairly large (16 million elements). The platform tells us the runtime of the kernel on a particular large test case that is unknown to us. The input matrices A and B are given as type half (half-precision floating point number). Lower than usual precision floats are common in AI workloads as they take up less space and allow for higher throughput. For improved accuracy, the computation of the GEMM output will be done using full-precision floats, but the final storage will also be as a half-precision float.</p>
+<div class="no-row-height column-margin column-container"><div id="ref-leetgpu" class="csl-entry" role="listitem">
+<span>“LeetGPU: Competitive GPU Programming.”</span> 2026. <a href="https://leetgpu.com" class="uri">https://leetgpu.com</a>.
+</div></div><p>For each kernel, I will explain the algorithm, how it interacts with the GPU architecture and memory hierarchy, and show the full code in CUDA C++. Finally, I will discuss the arithmetic intensity of the kernel and benchmark its performance on the following NVIDIA GPUs: Tesla T4 (2017), Ampere A100-80GB (2020), Hopper H100 (2022), Hopper H200 (2023), and Blackwell B200 (2024).</p>
 </section>
-<section id="assumed-background" class="level3">
+<section id="assumed-background" class="level3 page-columns page-full">
 <h3 class="anchored" data-anchor-id="assumed-background">Assumed background</h3>
-<p>I will assume the reader understands the basics of the CUDA programming model. If not, I recommend reading the first 6 chapters of Programming Massively Parallel Processors (Kirk &amp; Hwu), an excellent resource and probably the canonical text on this topic.</p>
-</section>
+<p>I will assume the reader understands the basics of the CUDA programming model. If not, I recommend reading the first 6 chapters of Programming Massively Parallel Processors <span class="citation" data-cites="pmpp">(<a href="#ref-pmpp" role="doc-biblioref">Kirk and Hwu 2022</a>)</span>, an excellent resource and probably the canonical text on this topic.</p>
+<div class="no-row-height column-margin column-container"><div id="ref-pmpp" class="csl-entry" role="listitem">
+Kirk, David B, and Wen-mei W Hwu. 2022. <em>Programming Massively Parallel Processors: A Hands-on Approach</em>. 4th ed. Morgan Kaufmann.
+</div></div></section>
 </section>
 <section id="naive-matrix-multiplication" class="level2">
 <h2 class="anchored" data-anchor-id="naive-matrix-multiplication">1. Naive Matrix Multiplication</h2>
@@ -446,14 +469,18 @@ C = \alpha \cdot (A \times B) + \beta \cdot C
 <div class="quarto-figure quarto-figure-center page-columns page-full">
 <figure class="figure page-columns page-full">
 <p><img src="images/02_a100_memory.png" class="img-fluid figure-img" style="width:100.0%"></p>
-<figcaption class="margin-caption">Memory hierarchy of an A100-40GB</figcaption>
+<figcaption class="margin-caption">Memory hierarchy of an A100-40GB <span class="citation" data-cites="memoryhierarchy">(<a href="#ref-memoryhierarchy" role="doc-biblioref"><span>“Memory Hierarchy of GPUs”</span> 2025</a>)</span><div id="ref-memoryhierarchy" class="csl-entry" role="listitem">
+<span>“Memory Hierarchy of GPUs.”</span> 2025. Arc Compute. <a href="https://www.arccompute.io/arc-blog/gpu-101-memory-hierarchy">https://www.arccompute.io/arc-blog/gpu-101-memory-hierarchy</a>.
+</div></figcaption>
 </figure>
 </div>
 <p>When we execute our kernel, we pass it a grid configuration that defines a total number of blocks and how we can index them, and a total number of threads per block and how we can index them. Multiple blocks will be assigned to a single Streaming Multiprocessor (SM) of the GPU at any given time. So all threads in an individual block have access to the same Shared Memory and L1 Cache on their resident Streaming Multiprocessor during execution. We can take advantage of this local memory to reduce our global memory accesses. This pattern is known as locality.</p>
 <div class="quarto-figure quarto-figure-center page-columns page-full">
 <figure class="figure page-columns page-full">
 <p><img src="images/03_tiled_mm.png" class="img-fluid figure-img" style="width:95.0%"></p>
-<figcaption class="margin-caption">Visualization of tiled matrix multiplication</figcaption>
+<figcaption class="margin-caption">Visualization of tiled matrix multiplication <span class="citation" data-cites="tiledmatmul">(<a href="#ref-tiledmatmul" role="doc-biblioref">Matthes et al. 2017</a>)</span><div id="ref-tiledmatmul" class="csl-entry" role="listitem">
+Matthes, Alexander, Rene Widera, Erik Zenker, Benjamin Worpitz, Axel Huebl, and Michael Bussmann. 2017. <span>“Tuning and Optimization for a Variety of Many-Core Architectures Without Changing a Single Line of Implementation Code Using the Alpaka Library.”</span> In, 496–514. <a href="https://doi.org/10.1007/978-3-319-67630-2_36">https://doi.org/10.1007/978-3-319-67630-2_36</a>.
+</div></figcaption>
 </figure>
 </div>
 <p>In tiled matrix multiplication, we choose a tile size which will comprise the total threads in a single block. We will choose 16 x 16 as our tile size so that we have a nice total of 256 threads per block. (32 x 32 would also work, but beyond that we need to be cognizant of hardware restrictions on the maximum number of threads per block). We then loop over a wide row in A and a wide column in B, one tile at a time, as shown above. During each loop iteration, we have a single tile in A and tile in B to process. Each thread is responsible for loading in one element each from A and B to the block’s shared memory. Then in an inner loop, we compute the product of those tiles and add it to the running sum for the output tile. By the end of the outer loop, we have loaded in and processed all elements required for the final value of elements in the 16 x 16 output tile, and so we can write to global memory.</p>
@@ -640,7 +667,9 @@ C = \alpha \cdot (A \times B) + \beta \cdot C
 <div class="quarto-figure quarto-figure-center page-columns page-full">
 <figure class="figure page-columns page-full">
 <p><img src="images/04_tensor_core.png" class="img-fluid figure-img" style="width:90.0%"></p>
-<figcaption class="margin-caption">Tensor Core performing a 4x4x4 matrix multiply and accumulate operation</figcaption>
+<figcaption class="margin-caption">Tensor Core performing a 4x4x4 matrix multiply and accumulate operation <span class="citation" data-cites="tensorcores">(<a href="#ref-tensorcores" role="doc-biblioref">2024</a>)</span><div id="ref-tensorcores" class="csl-entry" role="listitem">
+2024. <em>NVIDIA Technical Blog</em>. NVIDIA. <a href="https://developer.nvidia.com/blog/programming-tensor-cores-cuda-9/">https://developer.nvidia.com/blog/programming-tensor-cores-cuda-9/</a>.
+</div></figcaption>
 </figure>
 </div>
 <p>This capability is exposed to us as the Warp Matrix Multiply Accumulate API (WMMA). During program execution, a full warp of execution will use multiple Tensor Cores at a time in order to process a 16x16x16 MMA operation.</p>
@@ -1207,7 +1236,9 @@ C = \alpha \cdot (A \times B) + \beta \cdot C
 <div class="quarto-figure quarto-figure-center page-columns page-full">
 <figure class="figure page-columns page-full">
 <p><img src="images/02_a100_memory.png" class="img-fluid figure-img" style="width:100.0%"></p>
-<figcaption class="margin-caption">Memory hierarchy of an A100-40GB</figcaption>
+<figcaption class="margin-caption">Memory hierarchy of an A100-40GB <span class="citation" data-cites="memoryhierarchy">(<a href="#ref-memoryhierarchy" role="doc-biblioref"><span>“Memory Hierarchy of GPUs”</span> 2025</a>)</span><div id="ref-memoryhierarchy" class="csl-entry" role="listitem">
+<span>“Memory Hierarchy of GPUs.”</span> 2025. Arc Compute. <a href="https://www.arccompute.io/arc-blog/gpu-101-memory-hierarchy">https://www.arccompute.io/arc-blog/gpu-101-memory-hierarchy</a>.
+</div></figcaption>
 </figure>
 </div>
 <p>There are two types of caches on the GPU: L1 and L2. A separate L1 cache exists on each Streaming Multiprocessor and is physically shared with Shared Memory, but not logically. We can control the split between shared memory and L1 if we so choose, but we can’t control what goes into L1 like we can for shared memory. L1 is a cache, so it’s hardware-managed and caches global memory accesses automatically. It handles some level of spatial and temporal locality automatically for us.</p>
@@ -1217,7 +1248,9 @@ C = \alpha \cdot (A \times B) + \beta \cdot C
 <div class="quarto-figure quarto-figure-center page-columns page-full">
 <figure class="figure page-columns page-full">
 <p><img src="images/03_tiled_mm.png" class="img-fluid figure-img" style="width:95.0%"></p>
-<figcaption class="margin-caption">Visualization of tiled matrix multiplication</figcaption>
+<figcaption class="margin-caption">Visualization of tiled matrix multiplication <span class="citation" data-cites="tiledmatmul">(<a href="#ref-tiledmatmul" role="doc-biblioref">Matthes et al. 2017</a>)</span><div id="ref-tiledmatmul" class="csl-entry" role="listitem">
+Matthes, Alexander, Rene Widera, Erik Zenker, Benjamin Worpitz, Axel Huebl, and Michael Bussmann. 2017. <span>“Tuning and Optimization for a Variety of Many-Core Architectures Without Changing a Single Line of Implementation Code Using the Alpaka Library.”</span> In, 496–514. <a href="https://doi.org/10.1007/978-3-319-67630-2_36">https://doi.org/10.1007/978-3-319-67630-2_36</a>.
+</div></figcaption>
 </figure>
 </div>
 <p>Imagine that our L2 cache can only fit 16 tiles. For each tile in that first row in C, we are repeatedly using the first row of tiles of A. However, we use a different column of B each time. By the time we’re on the fourth tile of C in the first row of tiles, we’re now loading in the fourth column of tiles of B, but we already have 16 tiles in our L2 cache (one row of tiles from A and three columns of tiles from B). So we have to evict some data to make room. We’ve been continuously reusing the first row of A, so that won’t be evicted; instead, we’ll evict the first column of B. But the next output tile we will compute for C after this one is the first tile in the second row, which would have reused the first column of B. Sadly, we just evicted it, so we’ll have to pull it from global memory again.</p>
@@ -2019,7 +2052,7 @@ Figure&nbsp;1: GPU Runtime by Kernel Optimization Step
 </div>
 </div>
 </div>
-<p>LeetGPU has a leaderboard for each GPU for the GEMM problem, as well as a list of public solutions ordered by runtime. The leaderboard considers both private and public solutions (it is a user preference whether your solutions are public or not - I left mine as public as I greatly benefited from reading others solutions to understand their approaches). On most of the GPUs, I am not in the top 3 on the leaderboard, but on all of them my solution is in the top 5. In particular, for the Blackwell B200, my solution sits at 1st place by a whopping 1 microsecond over the next best solution. Not bad!</p>
+<p>LeetGPU has a leaderboard for each GPU for the GEMM problem, as well as a list of public solutions ordered by runtime. The leaderboard considers both private and public solutions (it is a user preference whether your solutions are public or not - I left mine as public as I greatly benefited from reading others solutions to understand their approaches). At the time of writing, on most of the GPUs, I am not in the top 3 on the leaderboard, but on all of them my solution is in the top 5. In particular, for the Blackwell B200, my solution sits at 1st place by a whopping 0.1 microsecond over the next best solution. Not bad!</p>
 <div class="quarto-figure quarto-figure-center page-columns page-full">
 <figure class="figure page-columns page-full">
 <p><img src="images/05_leaderboard.png" class="img-fluid figure-img" style="width:90.0%"></p>
@@ -2030,9 +2063,7 @@ Figure&nbsp;1: GPU Runtime by Kernel Optimization Step
 <section id="further-optimizations" class="level2">
 <h2 class="anchored" data-anchor-id="further-optimizations">Further Optimizations</h2>
 <p>I can almost certainly ascertain that the author of the next best solution had a generally superior kernel though, as their solutions are public. In particular, they used Warp Group MMA, a capability introduced in the Hopper generation that is much more efficient than standard WMMA. The cleanest way to use Warp Group MMA is with an external library, which is prohibited by the problem constraints so I considered it out of scope for this problem. Admirably, this author went ahead and called it directly with PTX code. While I assumed this would be very messy, their solution was surprisingly still quite nice to read. The architecture of Hopper and Blackwell GPUs is quite different and more optimized than previous generations for GEMM operations. In a future post, I will explore Warp Group MMA, the CuTe library, and various optimizations only available on the current generation of GPUs.</p>
-</section>
-<section id="additional-reading" class="level2">
-<h2 class="anchored" data-anchor-id="additional-reading">Additional Reading</h2>
+
 
 
 </section>
