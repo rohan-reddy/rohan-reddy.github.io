@@ -59,6 +59,7 @@ Hover over the numbered annotations for explanations of key parts.
 
 ### Annotated Code
 
+::: {.column-screen-inset}
 ```cpp
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
@@ -68,7 +69,7 @@ __global__ void gemm_naive_kernel(const half* A, const half* B, half* C, // <1>
                                   float alpha, float beta) { 
     
     // Calculate global row and column indices for this thread
-    int col = blockIdx.x * blockDim.x + threadIdx.x; // <2>
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     
     // Boundary check: ensure we don't access memory outside the matrix
@@ -102,6 +103,7 @@ extern "C" void solve(const half* A, const half* B, half* C, int M, int N, int K
 ```
 1. **half vs. float**: We use `half` precision (FP16) for storage but perform accumulation in `float` (FP32). This is so that we can move data faster from global memory (only 2 bytes per element rather than 4), but during the accumulation computation, we don't lose small updates due to the smaller mantissa in FP16. (For example, imagine adding 0.01 to a running sum of 1000: if our mantissa is small enough, we may significantly alter or even omit some updates.)
 2. **The Bottleneck**: This line is the performance killer. For every single pixel in C, we are fetching the entire row of A and column of B from Global Memory (DRAM). 
+:::
 
 ### Arithmetic Intensity
 For each output element of C, we load K elements of A and K elements of B in order to compute a dot product. For each pair of elements in the dot product, we multiply them together and then add the result to the running sum. Therefore, for every 2 halves we load from global memory (a total of 4 bytes), we perform 2 floating point operations. So our computational intensity is 2 FLOPs divided by 4 bytes, or 0.5 FLOP/B.
@@ -134,7 +136,7 @@ In tiled matrix multiplication, we choose a tile size which will comprise the to
 One additional optimization we introduce here is thread coarsening. This means that each thread is tasked with doing more work independently. The advantage of this approach is that if our grid ends up launching more total blocks than the hardware can assign to its SMs, then the blocks will inevitably be queued for assignment and execution. In that case, the blocks will be executed serially anyway, so we may as well have threads do more work in the first place and reduce some redundant data loading and synchronization overhead. However, we must be careful not to coarsen so much that we are no longer taking full advantage of the hardware. For our tiled matrix multiplication kernel, it can make sense for large matrices to have some coarsening. This is because although we have reduced redundancy in global memory accesses, we still will access the same "wide row" in A in two different blocks for two side-by-side output tiles in C. We can experiment with having a thread coarsening factor of 2, which means each block will process two output tiles in C rather than one.
 
 ### Annotated Code
-
+::: {.column-screen-inset}
 ```cpp
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
@@ -223,7 +225,7 @@ extern "C" void solve(const half* A, const half* B, half* C, int M, int N, int K
 5. **```__syncthreads()```**: This instruction forces each thread in the block to halt here and wait until every other thread in the block reaches this point. This first syncthreads command is known as a Read-After-Write hazard, and the one after it is known as a Write-After-Read hazard. In the first case, individual threads rely on reading shared memory that other threads in their block are writing to. In the second case, if we don't have a barrier, then some threads risk proceeding to the next loop iteration and modifying shared memory before other threads have read it for their computation on the previous iteration.
 6. **Another boundary check**: When we write to C, we again need to check that we are within bounds, since some tiles may not be fully contained at the end of the grid. 
 7. **Grid calculation with coarsening**: We adjust our grid calculation to account for the coarsening in the horizontal dimension; this impacts the total number of blocks we need horizontally. 
-
+:::
 
 ### Arithmetic Intensity
 Now that we are reusing some global memory, our arithmetic intensity is higher. The coarsening factor doesn't impact the arithmetic intensity, so let's ignore it for the calculation. A single thread is computing a single output element in C, but it doesn't have to load every element in the vectors of A and B that are used for that dot product. It only has to load one element of A and one element of B per tile, and then it benefits from the other 15 elements it needs from each matrix for each tile that were loaded by other threads. Therefore we reduced the number of global memory accesses by a factor of 16. But we are performing the same number of floating point operations, so our arithmetic intensity is simply 16 times higher than that of the naive kernel. Hence the arithmetic intensity of this kernel is 8 FLOPs/B. 
@@ -256,6 +258,7 @@ There are several advantages of using WMMA rather than manually programming the 
 One disadvantage of WMMA is that we are locked into the 16x16x16 operation shape. Later on, we'll adapt our kernel to handle any arbitrary matrix sizes. For now, we'll have our host code decide whether to use our WMMA kernel based on the input matrix sizes.
 
 ### Annotated Code
+::: {.column-screen-inset}
 ```cpp
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>
@@ -360,6 +363,7 @@ extern "C" void solve(const half* A, const half* B, half* C, int M, int N, int K
 6. **Storing back to global memory**: Here we need to pass the pointer to memory that we are storing into, the fragment we are loading from, the leading dimension of the matrix, and whether the matrix is row or column major.
 7. **Restrictions on WMMA**: WMMA strictly handles 16x16x16 operations only, so we need to check that our matrix dimensions are multiples of 16. If not, we'll launch our tiled GEMM kernel. In a later section, we will adjust our WMMA kernel to handle arbitrary matrix dimensions.
 8. **Grid Dimensions**: This works out to be (128, 4), so we have 512 total threads per block. Each row in our block has 128 threads, so a total of 4 warps, and then we have 4 rows, so we essentially have a 4x4 grid of warps in each block. Since each warp computes a 16x16 output tile, each warp is handling the same output as each block did in our tiled GEMM kernel. Since each block has a 4x4 grid of warps, we are then computing a 64x64 output tile of C for each block. We know that our matrix dimensions are divisible by 16, but they may not be divisible by 64. So at the blocks at the edge of our grid, we may have some warps that fall out of bounds of C. Luckily we have the necessary boundary checks in our kernel, so we just need to do our ceiling division here to ensure our blocks fully cover C, without worrying about if some of them go beyond the edges of C. 
+:::
 
 ### Arithmetic Intensity
 To calculate the arithmetic intensity of this kernel, we will focus on the main loop where the loading from global memory and MMA operations happen. On each loop iteration, a warp collectively loads one 16x16 tile from each of A and B. So we retrieve 512 half-precision floats for a total of 1024 bytes. Then we are modifying the running sums for a 16x16 output tile in C. For each pixel in this output tile, we are taking a dot product of two 16-element vectors, so we perform 16 multiplications and 16 additions. Therefore we perform 32 FLOPs for each pixel in the 16x16 output tile, for a total of 8192 FLOPs. Therefore, our arithmetic intensity is approximately 8192 / 1024 = 8 FLOPs/B. 
@@ -397,6 +401,7 @@ Because we have a 2 x 2 grid of warps, each warp will use a 32 x 16 chunk of A a
 The reason we do this is similar to why we loaded to shared memory in our tiled GEMM: we want to avoid redundant data loading and load as much data from global memory at once as we can usefully share across our block. By arranging our warps in 2 x 2 grid, we also are able to reuse more memory than if they were arranged in a straight line. For the collaborative data loading, we will use the thread ID in the block to determine what part of the current A (64 x 16) and B (16 x 64) chunks this thread will load. Each of these chunks can be treated as 128 8-half vectors, so each thread should load 8 elements. To reduce the number of instructions to load from global memory, we will employ vectorized loads to load 8 halves at once. Therefore, our A chunk can be viewed as 64 rows of 2 vectors, and our B chunk can be viewed as 8 rows of 8 vectors. We will use a vectorized store to global memory in the final section too, when possible. 
 
 ### Annotated Code
+::: {.column-screen-inset}
 ```cpp
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>
@@ -635,7 +640,7 @@ extern "C" void solve(const half* A, const half* B, half* C, int M, int N, int K
 8. **Reading from the Double Buffer**: We pull data for the WMMA operation from the half of the double buffer that is ready.
 9. Notice the location of this command in the main loop compared to in the prologue. We only had to issue it immediately after placing the copy command in the prologue because we needed to load the very first tile for compute. In the main loop, we don't need to hold up threads on the copy completion until we have finished all compute for this iteration.
 10. **Vectorized Store**: In this loop, we complete our GEMM operation by taking our accumulated result of A x B, scaling it by alpha, adding it to beta * C, and finally storing it in global memory. We have 64 * 64 = 4096 total elements to process and store, and 128 threads to do this. So we must process 32 elements per thread. If we vectorize this into processing 8 elements per step, we need only 4 steps per thread. However, we have an else block here that covers the tail elements once we have fewer than 8 elements left and can't do a vectorized store.
-
+:::
 
 ### Arithmetic Intensity
 
@@ -688,7 +693,7 @@ The solution to this is shared memory swizzling: basically storing data to share
 There is one more slight optimization included below. We double BLOCK_K to 32 and double our number of fragments for A and B. Doubling BLOCK_K means we load twice the data at the start of our K-loop and then have a new loop wrapping our warp math that executes exactly twice. The benefit is that we're loading more data at once and have fewer total iterations in our K-loop as it increments by 32 rather than 16, so we have to issue the syncthreads and pipeline wait commands fewer times. Doubling the number of fragments means in our warp math loop, when a warp computes WMMA 4 times for its 2 x 2 grid of subtiles, we can load the necessary data into fragments all at once and then perform the MMA. Previously, we were loading into the same fragments 4 separate times. 
 
 ### Annotated Code
-
+::: {.column-screen-inset}
 ```cpp
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>
@@ -1016,6 +1021,7 @@ extern "C" void solve(const half* A, const half* B, half* C, int M, int N, int K
 6. **Doubled Data Loading**: Since we're loading twice the data now per K-loop iteration, we need a new k-step loop that performs the warp math twice.
 7. **Warp Math**: We load the data all at once before this into our 4 fragments, and then can just loop 4 times calling ```mma_sync``` to perform the math. 
 8. **Dimension Check**: Since we doubled BLOCK_K we need to change this dimension check too. It may seem disappointing that we are now handling even fewer matrices with our optimized kernel. Don't worry, we'll fix this in the next kernel!
+:::
 
 ### Arithmetic Intensity
 
@@ -1036,7 +1042,7 @@ The swizzling didn't impact our actual FLOP count or memory volume. We did doubl
 It is unfortunate that we have made it this far without being able to fully remove our tiled GEMM kernel. This next kernel is a modification of the prior swizzled kernel that allows us to handle arbitrary dimensions in our input matrices. With some smart boundary checks and padding of shared memory with zeroes, we can ensure that we can use WMMA 16x16x16 operations across the entire matrix. We end up having some harmless padded zeroes as part of the operation that don't impact the final result. 
 
 ### Annotated Code
-
+::: {.column-screen-inset}
 ```cpp
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>
@@ -1372,6 +1378,7 @@ extern "C" void solve(const half* A, const half* B, half* C, int M, int N, int K
 1. **Valid flag**: We check if we are far enough within bounds to still do a vectorized load, or if we would go beyond the edges of the input matrices. If we're far enough within bounds, we can issue our ````pipeline_memcpy_async```` command as before. 
 2. **Zero padding**: If we're too close to the edge of the matrix, we loop element by element, loading from global memory where we're still in bounds and padding with zeroes wherever we're not. 
 3. **Boundary check for writing**: We have the same boundary checks as usual to not write out zeroes or junk to global memory in the epilogue.
+:::
 
 ### Arithmetic Intensity
 We're not performing more FLOPs or global memory access than the previous kernel. However, we are avoiding the use of the tiled GEMM kernel entirely, which means that in reality, our overall arithmetic intensity for all test cases will be closer to the optimized kernel's 32 FLOPs/B. We are not funneling any straggler test cases with awkward dimensions to the tiled kernel which only had 8 FLOPs/B. 
@@ -1474,3 +1481,7 @@ LeetGPU has a leaderboard for each GPU for the GEMM problem, as well as a list o
 ## Further Optimizations
 I can almost certainly ascertain that the author of the next best solution had a generally superior kernel though, as their solutions are public. In particular, they used Warp Group MMA, a capability introduced in the Hopper generation that is much more efficient than standard WMMA. The cleanest way to use Warp Group MMA is with an external library, which is prohibited by the problem constraints so I considered it out of scope for this problem. Admirably, this author went ahead and called it directly with PTX code. While I assumed this would be very messy, their solution was surprisingly still quite nice to read. The architecture of Hopper and Blackwell GPUs is quite different and more optimized than previous generations for GEMM operations. In a future post, I will explore Warp Group MMA, the CuTe library, and various optimizations only available on the current generation of GPUs.
 
+## References
+
+::: {#refs}
+:::

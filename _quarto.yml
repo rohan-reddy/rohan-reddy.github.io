@@ -11,7 +11,6 @@ website:
 
   site-url: https://rohan-reddy.github.io # you must change this appropriately for RSS feeds to work properly
   
-  # New line with typeset logo:
   title: "Rohan Reddy / Notes"
 
   navbar:
@@ -35,17 +34,15 @@ format:
     theme: cosmo
     toc: true
     toc-location: left
-    
-    # THE MAGIC SAUCE: This moves all notes to the side margin
-    reference-location: margin
-    citation-location: margin
+
+    reference-location: document
+    citation-location: document
     cap-location: margin  # Moves figure captions to the margin
     
-    # The key Distill features:
     citations-hover: true
     footnotes-hover: true
 
-    css: styles.css     # For fine-tuning fonts
+    css: styles.css   
 
 
 
